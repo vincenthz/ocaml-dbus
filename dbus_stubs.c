@@ -89,6 +89,7 @@ static int __type_array_table[] = { /* +1 */
 	DBUS_TYPE_STRUCT,
 	DBUS_TYPE_VARIANT,
 	DBUS_TYPE_DICT_ENTRY,
+	DBUS_TYPE_ARRAY,
 	-1
 };
 
@@ -118,6 +119,7 @@ static int find_index_equal(int searched_value, int *table)
 #define DBusError_val(v)        (*((DBusError **) Data_custom_val(v)))
 #define DBusPendingCall_val(v)  (*((DBusPendingCall **) Data_custom_val(v)))
 #define DBusWatch_val(v)        (*((DBusWatch **) Data_custom_val(v)))
+#define DBusTimeout_val(v)      (*((DBusTimeout **) Data_custom_val(v)))
 
 #define voidstar_alloc(o_con, c_con, final_fct)					\
 	do {									\
@@ -149,6 +151,11 @@ void finalize_dbus_pending_call(value v)
 }
 
 void finalize_dbus_watch(value v)
+{
+	/* empty */
+}
+
+void finalize_dbus_timeout(value v)
 {
 	/* empty */
 }
@@ -540,6 +547,73 @@ value stub_dbus_connection_set_watch_functions(value bus, value fns)
 	ret = dbus_connection_set_watch_functions(DBusConnection_val(bus), watch_add_cb,
 	                                          watch_rm_cb, watch_toggle_cb, (void *) callbackfns,
 	                                          watch_free_cb);
+	if (!ret)
+		caml_raise_out_of_memory();
+	CAMLreturn(Val_unit);
+}
+
+static dbus_bool_t timeout_add_cb(DBusTimeout *c_timeout, void *data)
+{
+	CAMLparam0();
+	CAMLlocal2(timeout, add_cb);
+	value *fns = data;
+	add_cb = Field(*fns, 0);
+	int ret;
+
+	voidstar_alloc(timeout, c_timeout, finalize_dbus_timeout);
+	ret = Bool_val(caml_callback(add_cb, timeout));
+	CAMLreturn(ret);
+}
+
+static void timeout_rm_cb(DBusTimeout *c_timeout, void *data)
+{
+	CAMLparam0();
+	CAMLlocal2(timeout, rm_cb);
+	value *fns = data;
+	rm_cb = Field(*fns, 1);
+
+	voidstar_alloc(timeout, c_timeout, finalize_dbus_timeout);
+	caml_callback(rm_cb, timeout);
+	CAMLreturn0;
+}
+
+static void timeout_toggle_cb(DBusTimeout *c_timeout, void *data)
+{
+	CAMLparam0();
+	CAMLlocal2(timeout, toggle_cb);
+	value *fns = data;
+	toggle_cb = Field(*fns, 2);
+
+	if (toggle_cb != Val_none) {
+		voidstar_alloc(timeout, c_timeout, finalize_dbus_timeout);
+		caml_callback(Field(toggle_cb, 0), timeout);
+	}
+	CAMLreturn0;
+}
+
+static void timeout_free_cb(void *data)
+{
+	value *v = data;
+	caml_remove_global_root(v);
+	free(v);
+}
+
+value stub_dbus_connection_set_timeout_functions(value bus, value fns)
+{
+	CAMLparam2(bus, fns);
+	value *callbackfns;
+	int ret;
+
+	callbackfns = malloc(sizeof(value));
+	if (!callbackfns)
+		caml_raise_out_of_memory();
+
+	*callbackfns = fns;
+	caml_register_global_root(callbackfns);
+
+	ret = dbus_connection_set_timeout_functions(DBusConnection_val(bus), timeout_add_cb,
+	                                            timeout_rm_cb, timeout_toggle_cb,
+	                                            (void *) callbackfns, timeout_free_cb);
 	if (!ret)
 		caml_raise_out_of_memory();
 	CAMLreturn(Val_unit);
@@ -1034,6 +1108,7 @@ value stub_dbus_message_append(value message, value list)
 
 static value message_get_one(DBusMessageIter *iter, int *subtype);
 static value message_get_list(DBusMessageIter *iter, int initial_has_next, int alloc_variant);
+static value message_get_array(DBusMessageIter *iter, int array_c_type, int initial_has_next);
 
 static value message_get_basic(DBusMessageIter *iter, int c_type)
 {
@@ -1096,7 +1171,7 @@ static value message_get_basic(DBusMessageIter *iter, int c_type)
 static value message_get_array_struct(DBusMessageIter *iter)
 {
 	CAMLparam0();
-	CAMLlocal4(tmp, list, v, r);
+	CAMLlocal3(tmp, list, v);
 	int has_next;
 
 	list = tmp = Val_emptylist;
@@ -1106,6 +1181,26 @@ static value message_get_array_struct(DBusMessageIter *iter)
 
 		dbus_message_iter_recurse(iter, &sub);
 		v = message_get_list(&sub, 1, 1);
+		caml_append_list(list, tmp, v);
+
+		has_next = dbus_message_iter_next(iter);
+	}
+	CAMLreturn(list);
+}
+
+static value message_get_array_array(DBusMessageIter *iter)
+{
+	CAMLparam0();
+	CAMLlocal3(tmp, list, v);
+	int has_next;
+
+	list = tmp = Val_emptylist;
+	has_next = 1;
+	while (has_next) {
+		DBusMessageIter sub;
+
+		dbus_message_iter_recurse(iter, &sub);
+		v = message_get_array(&sub, dbus_message_iter_get_element_type(&sub), 1);
 		caml_append_list(list, tmp, v);
 
 		has_next = dbus_message_iter_next(iter);
@@ -1192,7 +1287,11 @@ static value message_get_array(DBusMessageIter *iter, int array_c_type, int init
 	} else if (array_c_type == DBUS_TYPE_STRUCT) {
 		v = message_get_array_struct(iter);
 		caml_alloc_variant_param2(r, type, Val_emptylist, v); /* Structs of ([], v) */
+	} else if (array_c_type == DBUS_TYPE_ARRAY) {
+		v = message_get_array_array(iter);
+		caml_alloc_variant_param(r, type, v);
 	} else {
+		/*printf("array_c_type: unknown %c (%d)\n", array_c_type, array_c_type); */
 		caml_alloc_variant(r, 0); /* r = Dbus.Ty(Unknown) */
 	}
 
@@ -1434,4 +1533,31 @@ value stub_dbus_watch_handle(value watch, value flags)
 	dbus_watch_handle(DBusWatch_val(watch), c_flags);
 
 	CAMLreturn(Val_unit);
+}
+
+value stub_dbus_timeout_get_interval(value timeout)
+{
+	CAMLparam1(timeout);
+	int ret;
+
+	ret = dbus_timeout_get_interval(DBusTimeout_val(timeout));
+	CAMLreturn(Val_int(ret));
+}
+
+value stub_dbus_timeout_handle(value timeout)
+{
+	CAMLparam1(timeout);
+	int ret;
+
+	ret = dbus_timeout_handle(DBusTimeout_val(timeout));
+	CAMLreturn(Val_bool(ret));
+}
+
+value stub_dbus_timeout_get_enabled(value timeout)
+{
+	CAMLparam1(timeout);
+	int ret;
+
+	ret = dbus_timeout_get_enabled(DBusTimeout_val(timeout));
+	CAMLreturn(Val_bool(ret));
 }

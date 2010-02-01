@@ -20,11 +20,18 @@ type bus
 type message
 type pending_call
 type watch
+type timeout
 
 type add_watch_fn = watch -> bool
 type rm_watch_fn = watch -> unit
 type toggle_watch_fn = watch -> unit
+
+type add_timeout_fn = timeout -> bool
+type rm_timeout_fn = timeout -> unit
+type toggle_timeout_fn = timeout -> unit
+
 type watch_fns = add_watch_fn * rm_watch_fn * (toggle_watch_fn option)
+type timeout_fns = add_timeout_fn * rm_timeout_fn * (toggle_timeout_fn option)
 
 type ty_sig =
 	| SigByte
@@ -59,6 +66,7 @@ type ty_array =
 	| Structs of ty_sig list * (ty list list)
 	| Variants of ty list
 	| Dicts of (ty_sig * ty_sig) * ((ty * ty) list)
+	| Arrays of ty_array list
 and ty =
 	| Unknown
 	| Byte of char
@@ -93,6 +101,7 @@ let rec string_of_ty_array ty =
 	| Structs (ssig, ss) -> List.map (fun x -> string_of_ty (Struct x)) ss
 	| Variants (vs) -> List.map string_of_ty vs
 	| Dicts ((ksig, vsig), ds) -> List.map (fun (k, v) -> Printf.sprintf "%s: %s" (string_of_ty k) (string_of_ty v)) ds
+	| Arrays a -> List.map (fun x -> String.concat ", " (string_of_ty_array x)) a
 and string_of_ty ty =
 	match ty with
 	| Unknown      -> "Unknown"
@@ -263,6 +272,8 @@ external set_watch_functions : bus -> watch_fns -> unit
 	= "stub_dbus_connection_set_watch_functions"
 (** [set_watch_function bus addfn rmfn togglefn] set the watch functions for the connection.
  *)
+external set_timeout_functions : bus -> timeout_fns -> unit
+	= "stub_dbus_connection_set_timeout_functions"
 
 external get_max_message_size : bus -> int = "stub_dbus_connection_get_max_message_size"
 external set_max_message_size : bus -> int -> unit = "stub_dbus_connection_set_max_message_size"
@@ -294,6 +305,14 @@ external get_unix_fd : watch -> Unix.file_descr = "stub_dbus_watch_get_unix_fd"
 external get_enabled : watch -> bool = "stub_dbus_watch_get_enabled"
 external get_flags : watch -> flags list = "stub_dbus_watch_get_flags"
 external handle : watch -> flags list -> unit = "stub_dbus_watch_handle"
+
+end
+
+module Timeout = struct
+
+external get_interval : timeout -> int = "stub_dbus_timeout_get_interval"
+external get_enabled : timeout -> bool = "stub_dbus_timeout_get_enabled"
+external handle : timeout -> unit = "stub_dbus_watch_timeout"
 
 end
 

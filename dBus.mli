@@ -20,11 +20,18 @@ type bus
 type message
 type pending_call
 type watch
+type timeout
 
 type add_watch_fn = watch -> bool
 type rm_watch_fn = watch -> unit
 type toggle_watch_fn = watch -> unit
+
+type add_timeout_fn = timeout -> bool
+type rm_timeout_fn = timeout -> unit
+type toggle_timeout_fn = timeout -> unit
+
 type watch_fns = add_watch_fn * rm_watch_fn * (toggle_watch_fn option)
+type timeout_fns = add_timeout_fn * rm_timeout_fn * (toggle_timeout_fn option)
 
 type ty_sig =
 	| SigByte
@@ -59,6 +66,7 @@ type ty_array =
 	| Structs of ty_sig list * (ty list list)
 	| Variants of ty list
 	| Dicts of (ty_sig * ty_sig) * ((ty * ty) list)
+	| Arrays of ty_array list
 and ty =
 	| Unknown
 	| Byte of char
@@ -176,12 +184,17 @@ end
 
 module Watch :
 sig
-
 	type flags = Readable | Writable
 
 	val get_unix_fd : watch -> Unix.file_descr
 	val get_enabled : watch -> bool
 	val get_flags : watch -> flags list
 	val handle : watch -> flags list -> unit
+end
 
+module Timeout :
+sig
+	val get_interval : timeout -> int
+	val get_enabled : timeout -> bool
+	val handle : timeout -> unit
 end
