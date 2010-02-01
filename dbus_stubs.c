@@ -726,7 +726,6 @@ value stub_dbus_message_get(value message)
 			break;
 			}
 		default:
-			caml_failwith("unexpected type in message");
 			r = Val_int(0);
 			break;
 		}
