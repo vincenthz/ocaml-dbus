@@ -27,6 +27,24 @@
 #include <caml/signals.h>
 #include <caml/callback.h>
 
+#if defined(DEBUG_APPEND_ENABLE) || defined(DEBUG_GET_ENABLE)
+#include <stdio.h>
+#include <stdlib.h>
+#endif
+
+/* debug */
+#ifdef DEBUG_APPEND_ENABLE
+#define DEBUG_APPEND(fmt, ...)	fprintf(stderr, "debug: append: " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_APPEND(fmt, ...)	((void) 0)
+#endif
+
+#ifdef DEBUG_GET_ENABLE
+#define DEBUG_GET(fmt, ...)	fprintf(stderr, "debug: get: " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_GET(fmt, ...)	((void) 0)
+#endif
+
 #define Val_none 		(Val_int(0))
 #define caml_alloc_variant(val, tag)	\
 	do { val = Val_int(tag); } while (0)
@@ -817,7 +835,7 @@ value stub_dbus_message_get_##type (value message)		\
 	const char *c_v;					\
 	c_v = dbus_message_get_##type (DBusMessage_val(message)); \
 	if (!c_v)						\
-		CAMLreturn(Val_int(0));				\
+		CAMLreturn(Val_none);				\
 	vfield = caml_copy_string(c_v);				\
 	caml_alloc_some(v, vfield);				\
 	CAMLreturn(v);						\
@@ -946,6 +964,7 @@ value stub_dbus_message_set_auto_start(value message, value v)
 
 static void message_append_basic(DBusMessageIter *iter, int c_type, value v)
 {
+	DEBUG_APPEND("basic: %c (%d)\n", c_type, c_type);
 	switch (c_type) {
 	case DBUS_TYPE_BYTE: {
 		char x;
@@ -1046,6 +1065,7 @@ static value message_append_array(DBusMessageIter *iter, value array)
 	memset(signature, 0, sizeof(signature));
 
 	array_c_type = __type_array_table[Tag_val(array)];
+	DEBUG_APPEND("array: %c (%d)\n", array_c_type, array_c_type);
 	if (IS_BASIC(array_c_type)) {
 		signature[0] = (char) array_c_type;
 
@@ -1098,6 +1118,22 @@ static value message_append_array(DBusMessageIter *iter, value array)
 			message_append_one(&sub, Field(tuple, 1));
 		}
 		dbus_message_iter_close_container(iter, &sub);
+	} else if (array_c_type == DBUS_TYPE_ARRAY) {
+		/* ocaml representation: Arrays of ty_sig * ty_array list */
+		int sigty;
+
+		signature[0] = 'a';
+		if (Is_block(Field(array, 0)))
+			caml_failwith("array of array of container not supported yet");
+		else
+			sigty = __type_sig_table[Int_val(Field(array, 0))];
+		signature[1] = sigty;
+
+		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
+		for iterate_caml_list(Field(array, 1), tmp) {
+			message_append_array(&sub, Field(tmp, 0));
+		}
+		dbus_message_iter_close_container(iter, &sub);
 	} else
 		caml_failwith("internal error");
 	CAMLreturn(Val_unit);
@@ -1113,6 +1149,7 @@ static value message_append_variant(DBusMessageIter *iter, value v)
 	memset(signature, 0, sizeof(signature));
 
 	c_sub_type = __type_table[Tag_val(v)];
+	DEBUG_APPEND("variant: %c (%d)\n", c_sub_type, c_sub_type);
 
 	if (IS_BASIC(c_sub_type)) {
 		signature[0] = c_sub_type;
@@ -1147,6 +1184,7 @@ static value message_append_one(DBusMessageIter *iter, value v)
 	int c_type;
 
 	c_type = __type_table[Tag_val(v)];
+	DEBUG_APPEND("one: %c (%d)\n", c_type, c_type);
 	v = Field(v, 0); /* after this point v represent the contents of the ocaml variant type */
 	if (IS_BASIC(c_type)) {
 		message_append_basic(iter, c_type, v);
@@ -1168,6 +1206,7 @@ static value message_append_list(DBusMessageIter *iter, value list)
 {
 	CAMLparam1(list);
 	CAMLlocal2(tmp, v);
+	DEBUG_APPEND("list\n");
 
 	for iterate_caml_list(list, tmp) {
 		v = Field(tmp, 0);
@@ -1197,6 +1236,8 @@ static value message_get_basic(DBusMessageIter *iter, int c_type)
 {
 	CAMLparam0();
 	CAMLlocal1(v);
+
+	DEBUG_GET("basic: %c (%d)\n", c_type, c_type);
 	switch (c_type) {
 	case DBUS_TYPE_BYTE: {
 		char c;
@@ -1257,6 +1298,7 @@ static value message_get_array_struct(DBusMessageIter *iter)
 	CAMLlocal3(tmp, list, v);
 	int has_next;
 
+	DEBUG_GET("array_struct\n");
 	list = tmp = Val_emptylist;
 	has_next = 1;
 	while (has_next) {
@@ -1277,13 +1319,16 @@ static value message_get_array_array(DBusMessageIter *iter)
 	CAMLlocal3(tmp, list, v);
 	int has_next;
 
+	DEBUG_GET("array_array\n");
 	list = tmp = Val_emptylist;
 	has_next = 1;
 	while (has_next) {
 		DBusMessageIter sub;
+		int element_ty;
 
+		element_ty = dbus_message_iter_get_element_type(iter);
 		dbus_message_iter_recurse(iter, &sub);
-		v = message_get_array(&sub, dbus_message_iter_get_element_type(&sub), 1);
+		v = message_get_array(&sub, element_ty, 1);
 		caml_append_list(list, tmp, v);
 
 		has_next = dbus_message_iter_next(iter);
@@ -1297,6 +1342,7 @@ static value message_get_array_dict(DBusMessageIter *iter)
 	CAMLlocal5(tmp, list, v, r, tuple);
 	int has_next;
 
+	DEBUG_GET("array_dict\n");
 	list = tmp = Val_emptylist;
 	has_next = 1; /* FIXME */
 	while (has_next) {
@@ -1333,6 +1379,7 @@ static value message_get_array(DBusMessageIter *iter, int array_c_type, int init
 	CAMLlocal2(v, r);
 	int type;
 
+	DEBUG_GET("array: %c (%d)\n", array_c_type, array_c_type);
 	type = find_index_equal(array_c_type, __type_array_table);
 	if (IS_BASIC(array_c_type)) {
 		/* basic are all in the form : BASIC of list */
@@ -1372,7 +1419,7 @@ static value message_get_array(DBusMessageIter *iter, int array_c_type, int init
 		caml_alloc_variant_param2(r, type, Val_emptylist, v); /* Structs of ([], v) */
 	} else if (array_c_type == DBUS_TYPE_ARRAY) {
 		v = message_get_array_array(iter);
-		caml_alloc_variant_param(r, type, v);
+		caml_alloc_variant_param2(r, type, Val_int(0), v);
 	} else {
 		/*printf("array_c_type: unknown %c (%d)\n", array_c_type, array_c_type); */
 		caml_alloc_variant(r, 0); /* r = Dbus.Ty(Unknown) */
@@ -1386,6 +1433,7 @@ static value message_get_struct(DBusMessageIter *iter, int initial_has_next)
 	CAMLparam0();
 	value v;
 
+	DEBUG_GET("struct\n");
 	v = message_get_list(iter, 1, 1);
 	CAMLreturn(v);
 }
@@ -1400,6 +1448,7 @@ static value message_get_one(DBusMessageIter *iter, int *subtype)
 	int c_type, type;
 
 	c_type = dbus_message_iter_get_arg_type(iter);
+	DEBUG_GET("one: %c (%d)\n", c_type, c_type);
 	type = find_index_equal(c_type, __type_table);
 	v = Val_unit;
 
@@ -1443,6 +1492,7 @@ static value message_get_list(DBusMessageIter *iter, int initial_has_next, int a
 	CAMLlocal4(tmp, list, v, r);
 	int has_next;
 
+	DEBUG_GET("list: alloc_variant=%d\n", alloc_variant);
 	/* initialize local caml values */
 	tmp = list = Val_emptylist;
 	r = Val_unit;

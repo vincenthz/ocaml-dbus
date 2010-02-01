@@ -109,7 +109,7 @@ type ty_array =
 	| Structs of ty_sig list * (ty list list)
 	| Variants of ty list
 	| Dicts of (ty_sig * ty_sig) * ((ty * ty) list)
-	| Arrays of ty_array list
+	| Arrays of ty_sig * (ty_array list)
 and ty =
 	| Unknown
 	| Byte of char

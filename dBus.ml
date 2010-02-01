@@ -109,7 +109,7 @@ type ty_array =
 	| Structs of ty_sig list * (ty list list)
 	| Variants of ty list
 	| Dicts of (ty_sig * ty_sig) * ((ty * ty) list)
-	| Arrays of ty_array list
+	| Arrays of ty_sig * (ty_array list)
 and ty =
 	| Unknown
 	| Byte of char
@@ -144,7 +144,7 @@ let rec string_of_ty_array ty =
 	| Structs (ssig, ss) -> List.map (fun x -> string_of_ty (Struct x)) ss
 	| Variants (vs) -> List.map string_of_ty vs
 	| Dicts ((ksig, vsig), ds) -> List.map (fun (k, v) -> Printf.sprintf "%s: %s" (string_of_ty k) (string_of_ty v)) ds
-	| Arrays a -> List.map (fun x -> String.concat ", " (string_of_ty_array x)) a
+	| Arrays (asig, a) -> List.map (fun x -> "[" ^ (String.concat ", " (string_of_ty_array x)) ^ "]") a
 and string_of_ty ty =
 	match ty with
 	| Unknown      -> "Unknown"

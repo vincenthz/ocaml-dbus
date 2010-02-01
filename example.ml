@@ -81,7 +81,10 @@ let test () =
 		DBus.Array (DBus.Strings [ "abc"; "def" ]);
 		DBus.Variant (DBus.Int32 1l);
 		DBus.Struct [ DBus.String "abc"; DBus.Int64 10L ];
+		DBus.Array (DBus.ObjectPaths [ "/abc"; "/def"; ]);
 		DBus.Array (DBus.Variants [ DBus.String "abc"; DBus.Int32 400l ]);
+		DBus.Array (DBus.Arrays (DBus.SigString, [ DBus.Strings [ "x" ]; DBus.Strings [ "y"; "z" ] ]));
+		DBus.Array (DBus.Arrays (DBus.SigInt64, [ DBus.Int64s [ 10L; 24L ]; DBus.Int64s [ 54L; 12L ]; ]));
 		DBus.Array (DBus.Structs ([ DBus.SigString; DBus.SigString; DBus.SigInt32 ],
 			[
 				[ DBus.String "abc"; DBus.String "def"; DBus.Int32 10l ];
