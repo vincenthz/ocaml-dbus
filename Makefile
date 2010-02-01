@@ -1,9 +1,8 @@
-CC = gcc
-CFLAGS = -Wall -fPIC -O2 `pkg-config --cflags dbus-1` -I$(OCAMLLIBDIR)
+DBUS_CFLAGS = -ccopt "$(shell pkg-config --cflags dbus-1)"
 OCAMLC = ocamlc
 OCAMLOPT = ocamlopt
 
-LDFLAGS = -cclib -L./
+DBUS_LDFLAGS = -cclib "" $(shell pkg-config --libs dbus-1)
 
 OCAMLOPTFLAGS =
 OCAML_PKG_NAME = dbus
@@ -18,10 +17,16 @@ OCAML_TEST_LIB = `ocamlfind query oUnit`/oUnit.cmxa
 CHECK_PKGS = dbus-1
 
 INTERFACES = dBus.cmi dBus.mli
-LIBS = dBus.cmxa dBus.cma
+LIBS_NAT = dBus.cmxa
+LIBS_BYTE = dBus.cma
+LIBS = $(LIBS_BYTE) $(LIBS_NAT)
 PROGRAMS = test
 
-all: $(INTERFACES) $(LIBS) $(PROGRAMS)
+all: $(INTERFACES) $(LIBS_NAT) $(LIBS_BYTE)
+
+all-opt: all
+
+all-byte: $(INTERFACES) $(LIBS_BYTE)
 
 bins: $(PROGRAMS)
 
@@ -31,14 +36,12 @@ dBus.cmxa: libdbus_stubs.a dbus_stubs.a dBus.cmx
 	$(OCAMLOPT) $(OCAMLOPTFLAGS) -a -cclib -ldbus_stubs -cclib -ldbus-1 -o $@ dBus.cmx
 
 dBus.cma: libdbus_stubs.a dBus.cmi dBus.cmo
-	$(OCAMLC) -a -dllib dlldbus_stubs.so -cclib -ldbus_stubs -cclib -ldbus-1 -o $@ -custom dBus.cmo
+	$(OCAMLC) -a -dllib dlldbus_stubs.so -cclib -ldbus_stubs -cclib -ldbus-1 -o $@ dBus.cmo
 
-dbus_stubs.a: dbus_stubs.o
-	ocamlmklib -o dbus_stubs $+
+dbus_stubs.a: libdbus_stubs.a
 
 libdbus_stubs.a: dbus_stubs.o
-	ar rcs $@ $+
-	ocamlmklib -o dbus_stubs $+
+	ocamlmklib -o dbus_stubs $(DBUS_LDFLAGS) $+
 
 %.cmo: %.ml
 	$(OCAMLC) -c -o $@ $<
@@ -50,7 +53,7 @@ libdbus_stubs.a: dbus_stubs.o
 	$(OCAMLOPT) $(OCAMLOPTFLAGS) -c -o $@ $<
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(OCAMLC) $(DBUS_CFLAGS) -c -o $@ $<
 
 .PHONY: check
 check:
@@ -62,11 +65,16 @@ check:
 install: $(LIBS)
 	ocamlfind install -destdir $(OCAMLDESTDIR) -ldconf ignore $(OCAML_PKG_NAME) META $(INTERFACES) $(LIBS) *.a *.so *.cmx
 
+install-opt: install
+
+install-byte: all-byte
+	ocamlfind install -destdir $(OCAMLDESTDIR) -ldconf ignore $(OCAML_PKG_NAME) META $(INTERFACES) $(LIBS_BYTE) *.a *.so
+
 uninstall:
 	ocamlfind remove -destdir $(OCAMLDESTDIR) $(OCAML_PKG_NAME)
 
-test: dBus.cmxa test.ml
-	$(OCAMLOPT) -o $@ $(LDFLAGS) unix.cmxa $+
+test: dBus.cma test.ml
+	$(OCAMLC) -o $@ unix.cma $+
 
 clean:
 	rm -f *.o *.so *.a *.cmo *.cmi *.cma *.cmx *.cmxa $(LIBS) $(PROGRAMS)
