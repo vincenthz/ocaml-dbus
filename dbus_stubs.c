@@ -68,6 +68,51 @@ static int __bustype_table[] = {
 	DBUS_BUS_SESSION, DBUS_BUS_SYSTEM, DBUS_BUS_STARTER, -1
 };
 
+static char *__error_table[] = {
+	DBUS_ERROR_FAILED,
+	DBUS_ERROR_NO_MEMORY,
+	DBUS_ERROR_SERVICE_UNKNOWN,
+	DBUS_ERROR_NAME_HAS_NO_OWNER,
+	DBUS_ERROR_NO_REPLY,
+	DBUS_ERROR_IO_ERROR,
+	DBUS_ERROR_BAD_ADDRESS,
+	DBUS_ERROR_NOT_SUPPORTED,
+	DBUS_ERROR_LIMITS_EXCEEDED,
+	DBUS_ERROR_ACCESS_DENIED,
+	DBUS_ERROR_AUTH_FAILED,
+	DBUS_ERROR_NO_SERVER,
+	DBUS_ERROR_TIMEOUT,
+	DBUS_ERROR_NO_NETWORK,
+	DBUS_ERROR_ADDRESS_IN_USE,
+	DBUS_ERROR_DISCONNECTED,
+	DBUS_ERROR_INVALID_ARGS,
+	DBUS_ERROR_FILE_NOT_FOUND,
+	DBUS_ERROR_FILE_EXISTS,
+	DBUS_ERROR_UNKNOWN_METHOD,
+	DBUS_ERROR_TIMED_OUT,
+	DBUS_ERROR_MATCH_RULE_NOT_FOUND,
+	DBUS_ERROR_MATCH_RULE_INVALID,
+	DBUS_ERROR_SPAWN_EXEC_FAILED,
+	DBUS_ERROR_SPAWN_FORK_FAILED,
+	DBUS_ERROR_SPAWN_CHILD_EXITED,
+	DBUS_ERROR_SPAWN_CHILD_SIGNALED,
+	DBUS_ERROR_SPAWN_FAILED,
+	DBUS_ERROR_SPAWN_SETUP_FAILED,
+	DBUS_ERROR_SPAWN_CONFIG_INVALID,
+	DBUS_ERROR_SPAWN_SERVICE_INVALID,
+	DBUS_ERROR_SPAWN_SERVICE_NOT_FOUND,
+	DBUS_ERROR_SPAWN_PERMISSIONS_INVALID,
+	DBUS_ERROR_SPAWN_FILE_INVALID,
+	DBUS_ERROR_SPAWN_NO_MEMORY,
+	DBUS_ERROR_UNIX_PROCESS_ID_UNKNOWN,
+	DBUS_ERROR_INVALID_SIGNATURE,
+	DBUS_ERROR_INVALID_FILE_CONTENT,
+	DBUS_ERROR_SELINUX_SECURITY_CONTEXT_UNKNOWN,
+	DBUS_ERROR_ADT_AUDIT_DATA_UNKNOWN,
+	DBUS_ERROR_OBJECT_PATH_IN_USE,
+	NULL,
+};
+
 static int __type_sig_table[] = {
 	DBUS_TYPE_BYTE, DBUS_TYPE_BOOLEAN,
 	DBUS_TYPE_INT16, DBUS_TYPE_UINT16,
@@ -110,6 +155,16 @@ static int find_index_equal(int searched_value, int *table)
 
 	for (i = 0; table[i] != -1; i++)
 		if (table[i] == searched_value)
+			return i;
+	return -1;
+}
+
+static int find_index_string(const char *searched, char **table)
+{
+	int i;
+
+	for (i = 0; table[i] != NULL; i++)
+		if (strcmp(table[i], searched) == 0)
 			return i;
 	return -1;
 }
@@ -731,9 +786,11 @@ value stub_dbus_message_new_error(value reply_to, value error_name,
 	CAMLparam3(reply_to, error_name, error_message);
 	CAMLlocal1(msg);
 	DBusMessage *c_msg;
+	char *errname;
 
+	errname = __error_table[Int_val(error_name)];
 	c_msg = dbus_message_new_error(DBusMessage_val(reply_to),
-	                               String_val(error_name),
+	                               errname,
 	                               String_val(error_message));
 	if (!c_msg)
 		caml_failwith("message_new_error");
@@ -797,12 +854,38 @@ value stub_dbus_message_has_##type (value message, value v)	\
 MESSAGE_ACCESSOR(path)
 MESSAGE_ACCESSOR(interface)
 MESSAGE_ACCESSOR(member)
-MESSAGE_ACCESSOR_NOHAS(error_name)
 MESSAGE_ACCESSOR(destination)
 MESSAGE_ACCESSOR(sender)
 MESSAGE_GET_ACCESSOR(signature)
 MESSAGE_HAS_ACCESSOR(signature)
 /* bool no_reply */
+
+value stub_dbus_message_get_error_name(value message)
+{
+	CAMLparam1(message);
+	CAMLlocal1(error_name);
+	const char *errname;
+
+	errname = dbus_message_get_error_name(DBusMessage_val(message));
+	if (!errname)
+		error_name = Val_none;
+	else {
+		int index = find_index_string(errname, __error_table);
+		caml_alloc_some(error_name, Val_int(index));
+	}
+	CAMLreturn(error_name);
+}
+
+value stub_dbus_message_set_error_name(value message, value error_name)
+{
+	CAMLparam2(message, error_name);
+	char *errname;
+
+	errname = __error_table[Int_val(error_name)];
+	dbus_message_set_error_name(DBusMessage_val(message), errname);
+
+	CAMLreturn(Val_unit);
+}
 
 value stub_dbus_message_get_serial(value message)
 {

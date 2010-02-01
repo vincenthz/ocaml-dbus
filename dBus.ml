@@ -33,6 +33,49 @@ type toggle_timeout_fn = timeout -> unit
 type watch_fns = add_watch_fn * rm_watch_fn * (toggle_watch_fn option)
 type timeout_fns = add_timeout_fn * rm_timeout_fn * (toggle_timeout_fn option)
 
+type error_name =
+	| ERR_FAILED
+	| ERR_NO_MEMORY
+	| ERR_SERVICE_UNKNOWN
+	| ERR_NAME_HAS_NO_OWNER
+	| ERR_NO_REPLY
+	| ERR_IO_ERROR
+	| ERR_BAD_ADDRESS
+	| ERR_NOT_SUPPORTED
+	| ERR_LIMITS_EXCEEDED
+	| ERR_ACCESS_DENIED
+	| ERR_AUTH_FAILED
+	| ERR_NO_SERVER
+	| ERR_TIMEOUT
+	| ERR_NO_NETWORK
+	| ERR_ADDRESS_IN_USE
+	| ERR_DISCONNECTED
+	| ERR_INVALID_ARGS
+	| ERR_FILE_NOT_FOUND
+	| ERR_FILE_EXISTS
+	| ERR_UNKNOWN_METHOD
+	| ERR_TIMED_OUT
+	| ERR_MATCH_RULE_NOT_FOUND
+	| ERR_MATCH_RULE_INVALID
+	| ERR_SPAWN_EXEC_FAILED
+	| ERR_SPAWN_FORK_FAILED
+	| ERR_SPAWN_CHILD_EXITED
+	| ERR_SPAWN_CHILD_SIGNALED
+	| ERR_SPAWN_FAILED
+	| ERR_SPAWN_SETUP_FAILED
+	| ERR_SPAWN_CONFIG_INVALID
+	| ERR_SPAWN_SERVICE_INVALID
+	| ERR_SPAWN_SERVICE_NOT_FOUND
+	| ERR_SPAWN_PERMISSIONS_INVALID
+	| ERR_SPAWN_FILE_INVALID
+	| ERR_SPAWN_NO_MEMORY
+	| ERR_UNIX_PROCESS_ID_UNKNOWN
+	| ERR_INVALID_SIGNATURE
+	| ERR_INVALID_FILE_CONTENT
+	| ERR_SELINUX_SECURITY_CONTEXT_UNKNOWN
+	| ERR_ADT_AUDIT_DATA_UNKNOWN
+	| ERR_OBJECT_PATH_IN_USE
+
 type ty_sig =
 	| SigByte
 	| SigBool
@@ -171,7 +214,7 @@ external new_signal : string -> string -> string -> message
                     = "stub_dbus_message_new_signal"
 (** [new_signal path interface method] create a new signal message *)
 
-external new_error : message -> string -> string -> message
+external new_error : message -> error_name -> string -> message
                     = "stub_dbus_message_new_error"
 (** [new_error original_message error_name error_message] create a new error message
    from another message *)
@@ -189,7 +232,7 @@ external marshal : message -> string = "stub_dbus_message_marshal"
 external set_path : message -> string -> unit = "stub_dbus_message_set_path"
 external set_interface : message -> string -> unit = "stub_dbus_message_set_interface"
 external set_member : message -> string -> unit = "stub_dbus_message_set_member"
-external set_error_name : message -> string -> unit = "stub_dbus_message_set_error_name"
+external set_error_name : message -> error_name -> unit = "stub_dbus_message_set_error_name"
 external set_destination : message -> string -> unit = "stub_dbus_message_set_destination"
 external set_sender : message -> string -> unit = "stub_dbus_message_set_sender"
 external set_reply_serial : message -> int32 -> unit
@@ -212,7 +255,7 @@ external get_interface : message -> string option
                        = "stub_dbus_message_get_interface"
 external get_member : message -> string option
                     = "stub_dbus_message_get_member"
-external get_error_name : message -> string option
+external get_error_name : message -> error_name option
                         = "stub_dbus_message_get_error_name"
 external get_destination : message -> string option
                          = "stub_dbus_message_get_destination"

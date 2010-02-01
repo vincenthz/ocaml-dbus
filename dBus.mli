@@ -33,6 +33,49 @@ type toggle_timeout_fn = timeout -> unit
 type watch_fns = add_watch_fn * rm_watch_fn * (toggle_watch_fn option)
 type timeout_fns = add_timeout_fn * rm_timeout_fn * (toggle_timeout_fn option)
 
+type error_name =
+	| ERR_FAILED
+	| ERR_NO_MEMORY
+	| ERR_SERVICE_UNKNOWN
+	| ERR_NAME_HAS_NO_OWNER
+	| ERR_NO_REPLY
+	| ERR_IO_ERROR
+	| ERR_BAD_ADDRESS
+	| ERR_NOT_SUPPORTED
+	| ERR_LIMITS_EXCEEDED
+	| ERR_ACCESS_DENIED
+	| ERR_AUTH_FAILED
+	| ERR_NO_SERVER
+	| ERR_TIMEOUT
+	| ERR_NO_NETWORK
+	| ERR_ADDRESS_IN_USE
+	| ERR_DISCONNECTED
+	| ERR_INVALID_ARGS
+	| ERR_FILE_NOT_FOUND
+	| ERR_FILE_EXISTS
+	| ERR_UNKNOWN_METHOD
+	| ERR_TIMED_OUT
+	| ERR_MATCH_RULE_NOT_FOUND
+	| ERR_MATCH_RULE_INVALID
+	| ERR_SPAWN_EXEC_FAILED
+	| ERR_SPAWN_FORK_FAILED
+	| ERR_SPAWN_CHILD_EXITED
+	| ERR_SPAWN_CHILD_SIGNALED
+	| ERR_SPAWN_FAILED
+	| ERR_SPAWN_SETUP_FAILED
+	| ERR_SPAWN_CONFIG_INVALID
+	| ERR_SPAWN_SERVICE_INVALID
+	| ERR_SPAWN_SERVICE_NOT_FOUND
+	| ERR_SPAWN_PERMISSIONS_INVALID
+	| ERR_SPAWN_FILE_INVALID
+	| ERR_SPAWN_NO_MEMORY
+	| ERR_UNIX_PROCESS_ID_UNKNOWN
+	| ERR_INVALID_SIGNATURE
+	| ERR_INVALID_FILE_CONTENT
+	| ERR_SELINUX_SECURITY_CONTEXT_UNKNOWN
+	| ERR_ADT_AUDIT_DATA_UNKNOWN
+	| ERR_OBJECT_PATH_IN_USE
+
 type ty_sig =
 	| SigByte
 	| SigBool
@@ -116,7 +159,7 @@ sig
 	val new_method_call : string -> string -> string -> string -> message
 	val new_method_return : message -> message
 	val new_signal : string -> string -> string -> message
-	val new_error : message -> string -> string -> message
+	val new_error : message -> error_name -> string -> message
 	val append : message -> ty list -> unit
 	val get_rev : message -> ty list
 	val get : message -> ty list
@@ -124,7 +167,7 @@ sig
 	val set_path : message -> string -> unit
 	val set_interface : message -> string -> unit
 	val set_member : message -> string -> unit
-	val set_error_name : message -> string -> unit
+	val set_error_name : message -> error_name -> unit
 	val set_destination : message -> string -> unit
 	val set_sender : message -> string -> unit
 	val set_reply_serial : message -> int32 -> unit
@@ -139,7 +182,7 @@ sig
 	val get_path : message -> string option
 	val get_interface : message -> string option
 	val get_member : message -> string option
-	val get_error_name : message -> string option
+	val get_error_name : message -> error_name option
 	val get_destination : message -> string option
 	val get_sender : message -> string option
 	val get_signature : message -> string option
