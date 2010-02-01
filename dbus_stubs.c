@@ -101,16 +101,18 @@ static int find_index_equal(int searched_value, int *table)
 	return -1;
 }
 
-#define DBusConnection_val(v)   ((DBusConnection *) Field(v, 1))
-#define DBusMessage_val(v)      ((DBusMessage *) Field(v, 1))
-#define DBusError_val(v)        ((DBusError *) Field(v, 1))
-#define DBusPendingCall_val(v)	((DBusPendingCall *) Field(v, 1))
-#define DBusWatch_val(v)        ((DBusWatch *) Field(v, 1))
+#define DBusConnection_val(v)   (*((DBusConnection **) Data_custom_val(v)))
+#define DBusMessage_val(v)      (*((DBusMessage **) Data_custom_val(v)))
+#define DBusError_val(v)        (*((DBusError **) Data_custom_val(v)))
+#define DBusPendingCall_val(v)  (*((DBusPendingCall **) Data_custom_val(v)))
+#define DBusWatch_val(v)        (*((DBusWatch **) Data_custom_val(v)))
 
-#define voidstar_alloc(o_con, c_con, final_fct)				\
-	o_con = caml_alloc_final(SIZEOF_FINALPTR, final_fct,		\
-	                         SIZEOF_FINALPTR, 10 * SIZEOF_FINALPTR);\
-	Store_field(o_con, 1, (value) c_con);
+#define voidstar_alloc(o_con, c_con, final_fct)					\
+	do {									\
+		o_con = caml_alloc_final(SIZEOF_FINALPTR, final_fct,		\
+					 SIZEOF_FINALPTR, 10 * SIZEOF_FINALPTR);\
+		*((unsigned long *) Data_custom_val(o_con)) = (unsigned long) c_con; \
+	} while (0)
 
 void finalize_dbus_connection(value v)
 {
@@ -795,6 +797,45 @@ static void message_append_basic(DBusMessageIter *iter, int c_type, value v)
 	}
 }
 
+/** generate a signature out of DBus.tysig list */
+static int mk_signature_of_sig(value list, char *s, int left)
+{
+	CAMLparam0();
+	int offset = 0;
+
+	/* FIXME: verify we don't reach 0 */
+	for iterate_caml_list(list, list) {
+		int sigty;
+		value x = Field(list, 0);
+		if (Is_block(x)) {
+			caml_failwith("signature of container not supported yet");
+		} else {
+			sigty = __type_sig_table[Int_val(x)];
+			s[offset++] = sigty;
+		}
+	}
+
+	CAMLreturn(offset);
+#if 0
+	/*********** signature generator out of dbus.ty list */
+	for iterate_caml_list(tylist, tmp) {
+		value v = Field(tmp, 0);
+		int c_type = __type_table[Tag_val(v)];
+
+		signature[offset++] = c_type;
+	}
+	printf("signature: %s\n", signature);
+#endif
+
+}
+
+/* forward declaration since we use them recursively in array, struct .. */
+static value message_append_one(DBusMessageIter *iter, value v);
+static value message_append_list(DBusMessageIter *iter, value list);
+static value message_append_variant(DBusMessageIter *iter, value v);
+static value message_append_struct(DBusMessageIter *iter, value tylist);
+
+/** message_append array take the array values and append them to the iter */
 static value message_append_array(DBusMessageIter *iter, value array)
 {
 	CAMLparam1(array);
@@ -814,17 +855,24 @@ static value message_append_array(DBusMessageIter *iter, value array)
 		}
 		dbus_message_iter_close_container(iter, &sub);
 	} else if (array_c_type == DBUS_TYPE_STRUCT) {
+		/* ocaml representation: Structs of ty_sig list * (ty list list) */
 		int so = 0;
-		caml_failwith("array of struct not supported yet");
 		signature[so++] = '(';
-		/* fixme */
+		so += mk_signature_of_sig(Field(array, 0), signature + so, 256 - so);
 		signature[so++] = ')';
 
 		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
+		for iterate_caml_list(Field(array, 1), tmp) {
+			message_append_struct(&sub, Field(tmp, 0));
+		}
 		dbus_message_iter_close_container(iter, &sub);
 	} else if (array_c_type == DBUS_TYPE_VARIANT) {
-		caml_failwith("array of varient not supported yet");
 		signature[0] = 'v';
+		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
+		for iterate_caml_list(Field(array, 0), tmp) {
+			message_append_variant(&sub, Field(array, 0));
+		}
+		dbus_message_iter_close_container(iter, &sub);
 	} else if (array_c_type == DBUS_TYPE_DICT_ENTRY) {
 		/* ocaml representation: Dicts of (ty_sig * ty_sig) * ((ty * ty) list) */
 		int ksig, vsig;
@@ -846,11 +894,8 @@ static value message_append_array(DBusMessageIter *iter, value array)
 		for iterate_caml_list(Field(array, 1), tmp) {
 			value tuple = Field(tmp, 0);
 
-			message_append_basic(&sub, ksig, Field(tuple, 0));
-			/* FIXME if VARIANT need to go inside the stuff */
-			if (vsig == DBUS_TYPE_VARIANT)
-				;
-			message_append_basic(&sub, vsig, Field(tuple, 1));
+			message_append_one(&sub, Field(tuple, 0));
+			message_append_one(&sub, Field(tuple, 1));
 		}
 		dbus_message_iter_close_container(iter, &sub);
 	} else
@@ -858,24 +903,75 @@ static value message_append_array(DBusMessageIter *iter, value array)
 	CAMLreturn(Val_unit);
 }
 
-static value message_append_rec(DBusMessageIter *iter, value list)
+static value message_append_variant(DBusMessageIter *iter, value v)
+{
+	CAMLparam1(v);
+	DBusMessageIter sub;
+	int c_sub_type;
+	char signature[256];
+
+	memset(signature, 0, sizeof(signature));
+
+	c_sub_type = __type_table[Tag_val(v)];
+
+	if (IS_BASIC(c_sub_type)) {
+		signature[0] = c_sub_type;
+	} else {
+		/* FIXME once we know howto generate complex signature out of dbus.ty this can be removed */
+		caml_failwith("append: container type not supported in variant yet");
+	}
+
+	dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, signature, &sub);
+	message_append_one(&sub, v);
+	dbus_message_iter_close_container(iter, &sub);
+
+	CAMLreturn(Val_unit);
+}
+
+static value message_append_struct(DBusMessageIter *iter, value tylist)
+{
+	CAMLparam1(tylist);
+
+	DBusMessageIter sub;
+	dbus_message_iter_open_container(iter, DBUS_TYPE_STRUCT, NULL, &sub);
+	message_append_list(&sub, tylist);
+	dbus_message_iter_close_container(iter, &sub);
+
+	CAMLreturn(Val_unit);
+}
+
+/** message_append_one take ony DBus.ty and append it to the iterator */
+static value message_append_one(DBusMessageIter *iter, value v)
+{
+	CAMLparam1(v);
+	int c_type;
+
+	c_type = __type_table[Tag_val(v)];
+	v = Field(v, 0); /* after this point v represent the contents of the ocaml variant type */
+	if (IS_BASIC(c_type)) {
+		message_append_basic(iter, c_type, v);
+	} else if (c_type == DBUS_TYPE_ARRAY) {
+		message_append_array(iter, v);
+	} else if (c_type == DBUS_TYPE_STRUCT) {
+		message_append_struct(iter, v);
+	} else if (c_type == DBUS_TYPE_VARIANT) {
+		message_append_variant(iter, v);
+	} else {
+		/*printf("c_type: %c (%d)\n", c_type, c_type); */
+		caml_failwith("appending fail: unknown type");
+	}
+	CAMLreturn(Val_unit);
+}
+
+/** message_append_list take a list of DBus.ty and append them to the iterator */
+static value message_append_list(DBusMessageIter *iter, value list)
 {
 	CAMLparam1(list);
-	CAMLlocal3(tmp, type, v);
+	CAMLlocal2(tmp, v);
 
 	for iterate_caml_list(list, tmp) {
-		int c_type;
-
-		type = Field(tmp, 0);
-		c_type = __type_table[Tag_val(type)];
-		v = Field(type, 0);
-		if (IS_BASIC(c_type)) {
-			message_append_basic(iter, c_type, v);
-		} else if (c_type == DBUS_TYPE_ARRAY) {
-			message_append_array(iter, v);
-		} else {
-			caml_failwith("internal error");
-		}
+		v = Field(tmp, 0);
+		message_append_one(iter, v);
 	}
 	CAMLreturn(Val_unit);
 }
@@ -888,7 +984,7 @@ value stub_dbus_message_append(value message, value list)
 
 	c_msg = DBusMessage_val(message);
 	dbus_message_iter_init_append(c_msg, &iter);
-	message_append_rec(&iter, list);
+	message_append_list(&iter, list);
 
 	CAMLreturn(Val_unit);
 }

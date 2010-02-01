@@ -13,7 +13,7 @@ let print_dbus_ty_list l =
 let send_msg ~bus ~destination ~path ~intf ~serv ~params =
 	let msg = DBus.Message.new_method_call destination path intf serv in
 	DBus.Message.append msg params;
-	print_dbus_ty_list (DBus.Message.get msg);
+	(*print_dbus_ty_list (DBus.Message.get msg);*)
 	let r = DBus.Connection.send_with_reply_and_block bus msg (-1) in
 	let l = DBus.Message.get r in
 	l
@@ -56,7 +56,7 @@ let example_nm () =
 let send_notif_msg = send_msg ~destination:notif_name ~path:notif_path ~intf:notif_interface
 
 let example_notification () =
-	let bus = DBus.Bus.get DBus.Bus.System in
+	let bus = DBus.Bus.get DBus.Bus.Session in
 	let params = [
 		DBus.String "y";
 		DBus.UInt32 1l;
@@ -72,6 +72,26 @@ let example_notification () =
 	()
 
 (*****************************************************************************)
+(****************** Test Packets *********************************************)
+(*****************************************************************************)
+let test () =
+	let msg = DBus.Message.new_method_call notif_name notif_path notif_interface "X" in
+	let params = [
+		DBus.String "abc";
+		DBus.Array (DBus.Strings [ "abc"; "def" ]);
+		DBus.Variant (DBus.Int32 1l);
+		DBus.Struct [ DBus.String "abc"; DBus.Int64 10L ];
+		DBus.Array (DBus.Variants [ DBus.String "abc"; DBus.Int32 400l ]);
+		DBus.Array (DBus.Structs ([ DBus.SigString; DBus.SigString; DBus.SigInt32 ],
+			[
+				[ DBus.String "abc"; DBus.String "def"; DBus.Int32 10l ];
+				[ DBus.String "xxx"; DBus.String "yzy"; DBus.Int32 2901l ];
+			]))
+	] in
+	DBus.Message.append msg params;
+	()
+
+(*****************************************************************************)
 (*****************************************************************************)
 (*****************************************************************************)
 let () =
@@ -79,4 +99,5 @@ let () =
 	| "nm"           -> example_nm ();
 	| "notification" -> example_notification ();
 	| "avahi"        -> ()
+	| "test"         -> test ()
 	| _              -> ()
