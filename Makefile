@@ -74,22 +74,16 @@ install-byte: all-byte
 uninstall:
 	ocamlfind remove -destdir $(OCAMLDESTDIR) $(OCAML_PKG_NAME)
 
-test: dBus.cma test.ml
-	$(OCAMLC) -o $@ unix.cma $+
+test: dBus.cmxa test.ml
+	$(OCAMLOPT) -o $@ -cclib -L. unix.cmxa $+
 
 .PHONY: example
-example: example_avahi.opt example_nm.opt
+example: example_avahi example_nm
 
-example_avahi: dBus.cma example_avahi.ml
-	$(OCAMLC) -o $@ unix.cma $+
-
-example_avahi.opt: dBus.cmxa example_avahi.ml
+example_avahi: dBus.cmxa example_avahi.ml
 	$(OCAMLOPT) -o $@ -cclib -L. $+
 
-example_nm: dBus.cma example_nm.ml
-	$(OCAMLC) -o $@ unix.cma $+
-
-example_nm.opt: dBus.cmxa example_nm.ml
+example_nm: dBus.cmxa example_nm.ml
 	$(OCAMLOPT) -o $@ -cclib -L. $+
 
 clean:

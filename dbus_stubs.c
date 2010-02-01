@@ -24,6 +24,8 @@
 #include <caml/signals.h>
 #include <caml/callback.h>
 
+#define Val_none 	(Val_int(0))
+
 #define SIZEOF_FINALPTR		(2 * sizeof (void *))
 
 static int __messagetype_table[] = {
@@ -101,6 +103,11 @@ void finalize_dbus_message(value v)
 void finalize_dbus_pending_call(value v)
 {
 	dbus_pending_call_unref(DBusPendingCall_val(v));
+}
+
+void finalize_dbus_watch(value v)
+{
+	/* empty */
 }
 
 static void raise_dbus_error(DBusError *error)
@@ -400,6 +407,115 @@ value stub_dbus_connection_get_fd(value bus)
 	if (ret == 0)
 		caml_failwith("dbus_connection_get_fd");
 	CAMLreturn(Val_int(fd));
+}
+
+static dbus_bool_t watch_add_cb(DBusWatch *c_watch, void *data)
+{
+	CAMLparam0();
+	CAMLlocal1(watch);
+	value *fns = data;
+	value add_cb = Field(*fns, 0);
+	int ret;
+
+	voidstar_alloc(watch, c_watch, finalize_dbus_watch);
+	ret = Bool_val(caml_callback(add_cb, watch));
+	CAMLreturn(ret);
+}
+
+static void watch_rm_cb(DBusWatch *c_watch, void *data)
+{
+	CAMLparam0();
+	CAMLlocal1(watch);
+	value *fns = data;
+	value rm_cb = Field(*fns, 1);
+
+	voidstar_alloc(watch, c_watch, finalize_dbus_watch);
+	caml_callback(rm_cb, watch);
+	CAMLreturn0;
+}
+
+static void watch_toggle_cb(DBusWatch *c_watch, void *data)
+{
+	CAMLparam0();
+	CAMLlocal1(watch);
+	value *fns = data;
+	value toggle_cb = Field(*fns, 2);
+
+	if (toggle_cb != Val_none) {
+		voidstar_alloc(watch, c_watch, finalize_dbus_watch);
+		caml_callback(Field(toggle_cb, 0), watch);
+	}
+	CAMLreturn0;
+}
+
+static void watch_free_cb(void *data)
+{
+	value *v = data;
+	caml_remove_global_root(v);
+	free(v);
+}
+
+value stub_dbus_connection_set_watch_functions(value bus, value fns)
+{
+	CAMLparam2(bus, fns);
+	value *callbackfns;
+
+	callbackfns = malloc(sizeof(value));
+	if (!callbackfns)
+		caml_raise_out_of_memory();
+
+	*callbackfns = fns;
+	caml_register_global_root(callbackfns);
+
+	dbus_connection_set_watch_functions(DBusConnection_val(bus), watch_add_cb,
+	                                    watch_rm_cb, watch_toggle_cb, (void *) fns,
+	                                    watch_free_cb);
+	CAMLreturn(Val_unit);
+}
+
+value stub_dbus_connection_set_max_message_size(value bus, value size)
+{
+	CAMLparam2(bus, size);
+	dbus_connection_set_max_message_size(DBusConnection_val(bus), Int_val(size));
+	CAMLreturn(Val_unit);
+}
+
+value stub_dbus_connection_get_max_message_size(value bus)
+{
+	CAMLparam1(bus);
+	long ret;
+	ret = dbus_connection_get_max_message_size(DBusConnection_val(bus));
+	CAMLreturn(Val_int(ret));
+}
+
+value stub_dbus_connection_set_max_received_size(value bus, value size)
+{
+	CAMLparam2(bus, size);
+	dbus_connection_set_max_received_size(DBusConnection_val(bus), Int_val(size));
+	CAMLreturn(Val_unit);
+}
+
+value stub_dbus_connection_get_max_received_size(value bus)
+{
+	CAMLparam1(bus);
+	long ret;
+	ret = dbus_connection_get_max_received_size(DBusConnection_val(bus));
+	CAMLreturn(Val_int(ret));
+}
+
+value stub_dbus_connection_get_outgoing_size(value bus)
+{
+	CAMLparam1(bus);
+	long ret;
+	ret = dbus_connection_get_outgoing_size(DBusConnection_val(bus));
+	CAMLreturn(Val_int(ret));
+}
+
+value stub_dbus_connection_set_allow_anonymous(value bus, value val)
+{
+	CAMLparam2(bus, val);
+	dbus_connection_set_allow_anonymous(DBusConnection_val(bus), Bool_val(val));
+	CAMLreturn(Val_unit);
 }
 
 /****************** MESSAGE ********************/
@@ -942,4 +1058,34 @@ value stub_dbus_watch_get_unix_fd(value watch)
 
 	c_fd = dbus_watch_get_unix_fd(DBusWatch_val(watch));
 	CAMLreturn(Val_int(c_fd));
+}
+
+value stub_dbus_watch_get_enabled(value watch)
+{
+	CAMLparam1(watch);
+	int ret;
+
+	ret = dbus_watch_get_enabled(DBusWatch_val(watch));
+	CAMLreturn(Val_bool(ret));
+}
+
+value stub_dbus_watch_get_flags(value watch)
+{
+	CAMLparam1(watch);
+	CAMLlocal2(flags, tmp);
+	unsigned int c_flags;
+
+	flags = Val_emptylist;
+	c_flags = dbus_watch_get_flags(DBusWatch_val(watch));
+	#define APPEND_LIST(tmp, list, val) \
+		do { tmp = caml_alloc_small(2, Tag_cons); Field(tmp, 0) = (val); Field(tmp, 1) = list; list = (tmp); \
+		} while (0)
+	if (c_flags & DBUS_WATCH_READABLE) {
+		APPEND_LIST(tmp, flags, 0);
+	}
+	if (c_flags & DBUS_WATCH_WRITABLE) {
+		APPEND_LIST(tmp, flags, 1);
+	}
+
+	CAMLreturn(flags);
 }

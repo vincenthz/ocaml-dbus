@@ -22,6 +22,11 @@ type message
 type pending_call
 type watch
 
+type add_watch_fn = watch -> bool
+type rm_watch_fn = watch -> unit
+type toggle_watch_fn = watch -> unit
+type watch_fns = add_watch_fn * rm_watch_fn * (toggle_watch_fn option)
+
 type ty_array =
 	| Unknowns
 	| Bytes of char list
@@ -183,12 +188,35 @@ external send_with_reply_and_block : bus -> message -> int -> message
 external add_filter : bus -> (bus -> message -> bool) -> unit
                     = "stub_dbus_connection_add_filter"
 external flush : bus -> unit = "stub_dbus_connection_flush"
+
 external read_write : bus -> int -> bool = "stub_dbus_connection_read_write"
+(** [read_write bus timeout_millisecond] will block until it can read or write.
+   return value indicates whether connection is still open *)
+
 external read_write_dispatch : bus -> int -> bool
                              = "stub_dbus_connection_read_write_dispatch"
+(** [read_write_dispatch bus timeout_millisecond] will block until it can read or write.
+   return value indicates whether disconnect message has been processed *)
+
 external pop_message : bus -> message option
                      = "stub_dbus_connection_pop_message"
 external get_fd : bus -> Unix.file_descr = "stub_dbus_connection_get_fd"
+
+external set_watch_functions : bus -> watch_fns -> unit
+	= "stub_dbus_connection_set_watch_functions"
+(** [set_watch_function bus addfn rmfn togglefn] set the watch functions for the connection.
+ *)
+
+external get_max_message_size : bus -> int = "stub_dbus_connection_get_max_message_size"
+external set_max_message_size : bus -> int -> unit = "stub_dbus_connection_set_max_message_size"
+
+external get_max_received_size : bus -> int = "stub_dbus_connection_get_max_received_size"
+external set_max_received_size : bus -> int -> unit = "stub_dbus_connection_get_max_received_size"
+
+external get_outgoing_size : bus -> int = "stub_dbus_connection_get_outgoing_size"
+
+external set_allow_anonymous : bus -> bool -> unit = "stub_dbus_connection_set_allow_anonymous"
+
 end
 
 (***************** PENDING ********************)
@@ -203,8 +231,11 @@ end
 
 module Watch = struct
 
-external get_unix_fd : watch -> Unix.file_descr = "stub_dbus_watch_get_unix_fd"
+type flags = Readable | Writable
 
+external get_unix_fd : watch -> Unix.file_descr = "stub_dbus_watch_get_unix_fd"
+external get_enabled : watch -> bool = "stub_dbus_watch_get_enabled"
+external get_flags : watch -> flags list = "stub_dbus_watch_get_flags"
 
 end
 

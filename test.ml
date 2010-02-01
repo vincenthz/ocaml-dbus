@@ -16,7 +16,7 @@
 
 open Printf
 
-let client bus error =
+let client bus =
 	let msg = DBus.Message.new_signal "/test/signal/Object"
 	                                  "test.signal.Type" "Test" in
 	DBus.Message.append msg [ (DBus.String "Ping!!"); (DBus.Bool false) ];
@@ -24,14 +24,10 @@ let client bus error =
 	printf "client serial: %ld\n" serial;
 	DBus.Connection.flush bus
 
-let server bus error =
+let server bus =
 	let match_s = "type='signal',interface='test.signal.Type'" in
-	DBus.Bus.add_match bus match_s error;
+	DBus.Bus.add_match bus match_s false;
 	DBus.Connection.flush bus;
-	if DBus.Error.is_set error then (
-		printf "error set\n";
-		exit 1
-	);
 	DBus.Connection.add_filter bus (fun bus msg -> true);
 
 	while true
@@ -65,13 +61,9 @@ let _ =
 		exit 1
 	);
 
-	let err = DBus.Error.init () in
-	let bus = DBus.Bus.get DBus.Bus.Session err in
-	if DBus.Error.is_set err then (
-		printf "error set\n";
-		exit 1
-	);
+	let bus = DBus.Bus.get DBus.Bus.System in
 
 	match Sys.argv.(1) with
-	| "server" -> server bus err
-	| _        -> client bus err
+	| "server" -> server bus
+	| "client" -> client bus
+	| _        -> eprintf "unknown command\n";
