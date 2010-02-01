@@ -1112,10 +1112,13 @@ static value message_append_array(DBusMessageIter *iter, value array)
 
 		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
 		for iterate_caml_list(Field(array, 1), tmp) {
+			DBusMessageIter subitem;
 			value tuple = Field(tmp, 0);
 
-			message_append_one(&sub, Field(tuple, 0));
-			message_append_one(&sub, Field(tuple, 1));
+			dbus_message_iter_open_container(&sub, DBUS_TYPE_DICT_ENTRY, NULL, &subitem);
+			message_append_one(&subitem, Field(tuple, 0));
+			message_append_one(&subitem, Field(tuple, 1));
+			dbus_message_iter_close_container(&sub, &subitem);
 		}
 		dbus_message_iter_close_container(iter, &sub);
 	} else if (array_c_type == DBUS_TYPE_ARRAY) {
@@ -1359,6 +1362,8 @@ static value message_get_array_dict(DBusMessageIter *iter)
 		v = message_get_one(&sub, &subtype);
 		caml_alloc_variant_param(r, subtype, v);
 		Store_field(tuple, 0, r);
+
+		dbus_message_iter_next(&sub);
 
 		v = message_get_one(&sub, &subtype);
 		caml_alloc_variant_param(r, subtype, v);
