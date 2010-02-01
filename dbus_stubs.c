@@ -1122,7 +1122,8 @@ static int mk_signature_array(value ty, char *s, int left)
 	if (IS_BASIC(array_c_type)) {
 		s[offset++] = array_c_type;
 	} else if (array_c_type == DBUS_TYPE_DICT_ENTRY) {
-		raise_dbus_type_not_supported("signature of array of dicts");
+		value sigtuple = Field(ty, 0);
+		offset += mk_signature_dict(Field(sigtuple, 0), Field(sigtuple, 1), s + offset, left - offset);
 	} else if (array_c_type == DBUS_TYPE_VARIANT) {
 		raise_dbus_type_not_supported("signature of array of variant");
 	} else if (array_c_type == DBUS_TYPE_STRUCT) {

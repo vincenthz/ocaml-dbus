@@ -1,3 +1,3 @@
-version="0.26"
+version="0.27"
 archive(byte)="dBus.cma"
 archive(native)="dBus.cmxa"

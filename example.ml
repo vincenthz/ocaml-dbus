@@ -120,6 +120,9 @@ let test () =
 		DBus.Array (DBus.Dicts (outdictsig, [
 			(DBus.String "x", DBus.Array (DBus.Dicts (indictsig, [ (DBus.String "x", DBus.Bool true) ])))
 		]));
+		DBus.Variant (DBus.Array (DBus.Dicts (outdictsig, [
+			(DBus.String "x", DBus.Array (DBus.Dicts (indictsig, [ (DBus.String "x", DBus.Bool true) ])))
+		])));
 	] in
 	DBus.Message.append msg params;
 	print_dbus_ty_list (DBus.Message.get msg);
