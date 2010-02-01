@@ -21,8 +21,11 @@ type ty =
 	| Byte of char
 	| Bool of bool
 	| Int16 of int
+	| UInt16 of int
 	| Int32 of int32
+	| UInt32 of int32
 	| Int64 of int64
+	| UInt64 of int64
 	| Double of float
 	| String of string
 
@@ -81,13 +84,13 @@ sig
 	val has_sender : message -> string -> bool
 	val has_signature : message -> string -> bool
 	val get_type : message -> message_type
-	val get_path : message -> string
-	val get_interface : message -> string
-	val get_member : message -> string
-	val get_error_name : message -> string
-	val get_destination : message -> string
-	val get_sender : message -> string
-	val get_signature : message -> string
+	val get_path : message -> string option
+	val get_interface : message -> string option
+	val get_member : message -> string option
+	val get_error_name : message -> string option
+	val get_destination : message -> string option
+	val get_sender : message -> string option
+	val get_signature : message -> string option
 	val get_serial : message -> int32
 	val get_reply_serial : message -> int32
 	val get_auto_start : message -> bool
@@ -100,9 +103,11 @@ module Connection :
 sig
 	val send : bus -> message -> int32
 	val send_with_reply : bus -> message -> int -> pending_call
+	val send_with_reply_and_block : bus -> message -> int -> error -> message
 	val add_filter : bus -> (bus -> message -> bool) -> unit
 	val flush : bus -> unit
-	val read_write : bus -> int -> unit
+	val read_write : bus -> int -> bool
+	val read_write_dispatch : bus -> int -> bool
 	val pop_message : bus -> message option
 	val get_fd : bus -> Unix.file_descr
 end

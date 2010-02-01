@@ -31,6 +31,7 @@ let server bus error =
 		printf "error set\n";
 		exit 1
 	);
+	DBus.Connection.add_filter bus (fun bus msg -> true);
 
 	while true
 	do

@@ -40,7 +40,9 @@ static int __bustype_table[] = {
 
 static int __type_table[] = {
 	DBUS_TYPE_BYTE, DBUS_TYPE_BOOLEAN,
-	DBUS_TYPE_INT16, DBUS_TYPE_INT32, DBUS_TYPE_INT64,
+	DBUS_TYPE_INT16, DBUS_TYPE_UINT16,
+	DBUS_TYPE_INT32, DBUS_TYPE_UINT32,
+	DBUS_TYPE_INT64, DBUS_TYPE_UINT64,
 	DBUS_TYPE_DOUBLE, DBUS_TYPE_STRING,
 	-1
 };
@@ -261,6 +263,26 @@ value stub_dbus_connection_send_with_reply(value bus, value message,
 	CAMLreturn(pending);
 }
 
+value stub_dbus_connection_send_with_reply_and_block(value bus, value message,
+                                                     value timeout,
+                                                     value error)
+{
+	CAMLparam4(bus, message, timeout, error);
+	CAMLlocal1(rmsg);
+	DBusMessage *c_rmsg;
+
+	c_rmsg = dbus_connection_send_with_reply_and_block(
+	                                               DBusConnection_val(bus),
+	                                               DBusMessage_val(message),
+	                                               Int_val (timeout),
+	                                               DBusError_val(error));
+	if (!c_rmsg)
+		caml_failwith("dbus_connection_send_with_reply_and_block");
+
+	voidstar_alloc(rmsg, c_rmsg, finalize_dbus_message);
+	CAMLreturn(rmsg);
+}
+
 DBusHandlerResult add_filter_callback(DBusConnection *connection,
                                       DBusMessage *message,
                                       void *userdata)
@@ -279,13 +301,26 @@ DBusHandlerResult add_filter_callback(DBusConnection *connection,
 		: DBUS_HANDLER_RESULT_NOT_YET_HANDLED);
 }
 
+static void dbus_free_filter(void *_v)
+{
+	value *v = _v;
+	caml_remove_global_root(v);
+	free(v);
+}
+
 value stub_dbus_connection_add_filter(value bus, value callback)
 {
 	CAMLparam2(bus, callback);
+	value *callbackp;
 
-	caml_register_global_root(&callback);
+	callbackp = malloc(sizeof(value));
+	if (!callbackp)
+		caml_raise_out_of_memory();
+	*callbackp = callback;
+	caml_register_global_root(callbackp);
 	dbus_connection_add_filter(DBusConnection_val(bus),
-	                           add_filter_callback, &callback, NULL);
+	                           add_filter_callback, callbackp,
+	                           dbus_free_filter);
 
 	CAMLreturn(Val_unit);
 }
@@ -300,8 +335,18 @@ value stub_dbus_connection_flush(value bus)
 value stub_dbus_connection_read_write(value bus, value timeout)
 {
 	CAMLparam2(bus, timeout);
-	dbus_connection_read_write(DBusConnection_val(bus), Int_val(timeout));
-	CAMLreturn(Val_unit);
+	dbus_bool_t b;
+	b = dbus_connection_read_write(DBusConnection_val(bus), Int_val(timeout));
+	CAMLreturn(Val_bool(b));
+}
+
+value stub_dbus_connection_read_write_dispatch(value bus, value timeout)
+{
+	CAMLparam2(bus, timeout);
+	dbus_bool_t b;
+	b = dbus_connection_read_write_dispatch(DBusConnection_val(bus),
+	                                        Int_val(timeout));
+	CAMLreturn(Val_bool(b));
 }
 
 value stub_dbus_connection_pop_message(value bus)
@@ -425,10 +470,14 @@ value stub_dbus_message_get_type(value message)
 value stub_dbus_message_get_##type (value message)		\
 {								\
 	CAMLparam1(message);					\
-	CAMLlocal1(v);						\
+	CAMLlocal2(v, vfield);					\
 	const char *c_v;					\
 	c_v = dbus_message_get_##type (DBusMessage_val(message)); \
-	v = caml_copy_string(c_v);				\
+	if (!c_v)						\
+		CAMLreturn(Val_int(0));				\
+	vfield = caml_copy_string(c_v);				\
+	v = caml_alloc_small(1, 0);				\
+	Field(v, 0) = vfield;					\
 	CAMLreturn(v);						\
 }								\
 
@@ -623,7 +672,6 @@ value stub_dbus_message_get(value message)
 			break;
 			}
 		case DBUS_TYPE_UINT16:
-			type = find_index_equal(DBUS_TYPE_INT16, __type_table);
 		case DBUS_TYPE_INT16: {
 			int i;
 			dbus_message_iter_get_basic(&args, &i);
@@ -633,7 +681,6 @@ value stub_dbus_message_get(value message)
 			break;
 			}
 		case DBUS_TYPE_UINT32:
-			type = find_index_equal(DBUS_TYPE_INT32, __type_table);
 		case DBUS_TYPE_INT32: {
 			int i;
 			dbus_message_iter_get_basic(&args, &i);
@@ -643,7 +690,6 @@ value stub_dbus_message_get(value message)
 			break;
 			}
 		case DBUS_TYPE_UINT64:
-			type = find_index_equal(DBUS_TYPE_INT64, __type_table);
 		case DBUS_TYPE_INT64: {
 			unsigned long long ld;
 			dbus_message_iter_get_basic(&args, &ld);
@@ -661,6 +707,12 @@ value stub_dbus_message_get(value message)
 			break;
 			}
 		case DBUS_TYPE_DOUBLE: {
+			double d;
+			dbus_message_iter_get_basic(&args, &d);
+			v = caml_copy_double(d);
+			r = caml_alloc_small(1, type);
+			Field(r, 0) = v;
+			break;
 			}
 		default:
 			caml_failwith("unexpected type in message");

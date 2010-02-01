@@ -22,8 +22,11 @@ type ty =
 	| Byte of char
 	| Bool of bool
 	| Int16 of int
+	| UInt16 of int
 	| Int32 of int32
+	| UInt32 of int32
 	| Int64 of int64
+	| UInt64 of int64
 	| Double of float
 	| String of string
 
@@ -96,13 +99,19 @@ external has_signature : message -> string -> bool = "stub_dbus_message_has_sign
 
 
 external get_type : message -> message_type = "stub_dbus_message_get_type"
-external get_path : message -> string = "stub_dbus_message_get_path"
-external get_interface : message -> string = "stub_dbus_message_get_interface"
-external get_member : message -> string = "stub_dbus_message_get_member"
-external get_error_name : message -> string = "stub_dbus_message_get_error_name"
-external get_destination : message -> string = "stub_dbus_message_get_destination"
-external get_sender : message -> string = "stub_dbus_message_get_sender"
-external get_signature : message -> string = "stub_dbus_message_get_signature"
+external get_path : message -> string option = "stub_dbus_message_get_path"
+external get_interface : message -> string option
+                       = "stub_dbus_message_get_interface"
+external get_member : message -> string option
+                    = "stub_dbus_message_get_member"
+external get_error_name : message -> string option
+                        = "stub_dbus_message_get_error_name"
+external get_destination : message -> string option
+                         = "stub_dbus_message_get_destination"
+external get_sender : message -> string option
+                    = "stub_dbus_message_get_sender"
+external get_signature : message -> string option
+                       = "stub_dbus_message_get_signature"
 external get_serial : message -> int32 = "stub_dbus_message_get_serial"
 external get_reply_serial : message -> int32
                           = "stub_dbus_message_get_reply_serial"
@@ -122,10 +131,14 @@ external send : bus -> message -> int32
               = "stub_dbus_connection_send"
 external send_with_reply : bus -> message -> int -> pending_call
               = "stub_dbus_connection_send_with_reply"
+external send_with_reply_and_block : bus -> message -> int -> error -> message
+              = "stub_dbus_connection_send_with_reply_and_block"
 external add_filter : bus -> (bus -> message -> bool) -> unit
                     = "stub_dbus_connection_add_filter"
 external flush : bus -> unit = "stub_dbus_connection_flush"
-external read_write : bus -> int -> unit = "stub_dbus_connection_read_write"
+external read_write : bus -> int -> bool = "stub_dbus_connection_read_write"
+external read_write_dispatch : bus -> int -> bool
+                             = "stub_dbus_connection_read_write_dispatch"
 external pop_message : bus -> message option
                      = "stub_dbus_connection_pop_message"
 external get_fd : bus -> Unix.file_descr = "stub_dbus_connection_get_fd"
