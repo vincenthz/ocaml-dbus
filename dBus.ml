@@ -227,7 +227,19 @@ end
 
 (****************** MESSAGE ********************)
 module Message = struct
+
 type message_type = Invalid | Method_call | Method_return | Error | Signal
+
+type message_header = {
+	serial: int32;
+	ty: message_type;
+	destination: service option;
+	path: path option;
+	interface: interface option;
+	member: string option;
+	error_name: error_name option;
+	sender: string option;
+}
 
 let string_of_message_ty ty =
 	match ty with
@@ -258,6 +270,10 @@ external new_error : message -> error_name -> string -> message
                     = "stub_dbus_message_new_error"
 (** [new_error original_message error_name error_message] create a new error message
    from another message *)
+
+external get_header : message -> message_header = "stub_dbus_message_get_header"
+(** [get_header message] returns message header in a more easy fashion than using
+  the is_* and get_* interface *)
 
 external _append : message -> ty list -> unit = "stub_dbus_message_append"
 

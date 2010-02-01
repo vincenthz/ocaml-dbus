@@ -999,6 +999,41 @@ value stub_dbus_message_set_auto_start(value message, value v)
 	CAMLreturn(Val_unit);
 }
 
+value stub_dbus_message_get_header(value message)
+{
+	CAMLparam1(message);
+	CAMLlocal2(ret, v);
+
+	ret = caml_alloc_tuple(8);
+
+	v = stub_dbus_message_get_serial(message);
+	Store_field(ret, 0, v);
+
+	v = stub_dbus_message_get_type(message);
+	Store_field(ret, 1, v);
+
+	v = stub_dbus_message_get_destination(message);
+	Store_field(ret, 2, v);
+
+	v = stub_dbus_message_get_path(message);
+	Store_field(ret, 3, v);
+
+	v = stub_dbus_message_get_interface(message);
+	Store_field(ret, 4, v);
+
+	v = stub_dbus_message_get_member(message);
+	Store_field(ret, 5, v);
+
+	v = stub_dbus_message_get_error_name(message);
+	Store_field(ret, 6, v);
+
+	v = stub_dbus_message_get_sender(message);
+	Store_field(ret, 7, v);
+
+	CAMLreturn(ret);
+}
+
+
 #define IS_BASIC(ty) \
 	((ty) == DBUS_TYPE_BYTE || \
 	 (ty) == DBUS_TYPE_BOOLEAN || \
@@ -1064,7 +1099,7 @@ static void message_append_basic(DBusMessageIter *iter, int c_type, value v)
 }
 
 static int mk_signature_structs(value vstructs, char *s, int left);
-
+static int mk_signature_arrays(value arraysig, char *s, int left);
 
 static int mk_signature_sig(value sig, char *s, int left)
 {
@@ -1119,17 +1154,15 @@ static int mk_signature_array(value ty, char *s, int left)
 
 	s[offset++] = DBUS_TYPE_ARRAY;
 	array_c_type = __type_array_table[Tag_val(ty)];
-	if (IS_BASIC(array_c_type)) {
+	if (IS_BASIC(array_c_type) || array_c_type == DBUS_TYPE_VARIANT) {
 		s[offset++] = array_c_type;
 	} else if (array_c_type == DBUS_TYPE_DICT_ENTRY) {
 		value sigtuple = Field(ty, 0);
 		offset += mk_signature_dict(Field(sigtuple, 0), Field(sigtuple, 1), s + offset, left - offset);
-	} else if (array_c_type == DBUS_TYPE_VARIANT) {
-		raise_dbus_type_not_supported("signature of array of variant");
 	} else if (array_c_type == DBUS_TYPE_STRUCT) {
 		offset += mk_signature_structs(ty, s + offset, left - offset);
 	} else if (array_c_type == DBUS_TYPE_ARRAY) {
-		raise_dbus_type_not_supported("signature of array of array");
+		offset += mk_signature_arrays(Field(ty, 0), s + offset, left - offset);
 	} else {
 		raise_dbus_type_not_supported("signature of array of unknown types");
 	}
@@ -1177,6 +1210,16 @@ static int mk_signature_structs(value vstructs, char *s, int left)
 	}
 	s[offset++] = ')';
 	DEBUG_SIG("structs: %s (offset=%d)\n", s, offset);
+	return offset;
+}
+
+static int mk_signature_arrays(value arraysig, char *s, int left)
+{
+	int offset = 0;
+
+	s[offset++] = 'a';
+	offset += mk_signature_sig(arraysig, s + offset, left - offset);
+	DEBUG_SIG("arrays: %s (offset=%d)\n", s, offset);
 	return offset;
 }
 
@@ -1267,12 +1310,7 @@ static value message_append_array(DBusMessageIter *iter, value array)
 		/* ocaml representation: Arrays of ty_sig * ty_array list */
 		int sigty;
 
-		signature[0] = 'a';
-		if (Is_block(Field(array, 0)))
-			raise_dbus_type_not_supported("array of array of container");
-		else
-			sigty = __type_sig_table[Int_val(Field(array, 0))];
-		signature[1] = sigty;
+		mk_signature_arrays(Field(array, 0), signature, 256);
 
 		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
 		for iterate_caml_list(Field(array, 1), tmp) {

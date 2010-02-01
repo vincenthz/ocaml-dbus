@@ -116,6 +116,9 @@ let test () =
 	let msg = DBus.Message.new_method_call notif_name notif_path notif_interface "X" in
 	let indictsig = (DBus.SigString, DBus.SigBool) in
 	let outdictsig = (DBus.SigString, DBus.SigDict (fst indictsig, snd indictsig)) in
+
+	let structsig = [ DBus.SigString; DBus.SigInt32 ] in
+
 	let params = [
 		DBus.Array (DBus.Dicts (outdictsig, [
 			(DBus.String "x", DBus.Array (DBus.Dicts (indictsig, [ (DBus.String "x", DBus.Bool true) ])))
@@ -123,6 +126,12 @@ let test () =
 		DBus.Variant (DBus.Array (DBus.Dicts (outdictsig, [
 			(DBus.String "x", DBus.Array (DBus.Dicts (indictsig, [ (DBus.String "x", DBus.Bool true) ])))
 		])));
+		DBus.Variant (DBus.Array (DBus.Variants [ DBus.String "abc"; DBus.Int32 23l ]));
+		DBus.Variant (DBus.Array (DBus.Arrays (DBus.SigString,
+			[ DBus.Strings [ "a"; "b"; "c" ]; DBus.Strings [ "x"; "y"; "z" ] ])));
+		DBus.Array (DBus.Arrays (DBus.SigStruct structsig,
+		                                        [ DBus.Structs (structsig, [ [ DBus.String "lollilol"; DBus.Int32 2901l ] ]) ]
+		));
 	] in
 	DBus.Message.append msg params;
 	print_dbus_ty_list (DBus.Message.get msg);

@@ -162,12 +162,25 @@ sig
 		| Method_return
 		| Error
 		| Signal
+
+	type message_header = {
+		serial: int32;
+		ty: message_type;
+		destination: service option;
+		path: path option;
+		interface: interface option;
+		member: string option;
+		error_name: error_name option;
+		sender: string option;
+	}
+
 	val string_of_message_ty : message_type -> string
 	val create : message_type -> message
 	val new_method_call : service -> path -> interface -> string -> message
 	val new_method_return : message -> message
 	val new_signal : path -> interface -> string -> message
 	val new_error : message -> error_name -> string -> message
+	val get_header : message -> message_header
 	val append : message -> ty list -> unit
 	val get : message -> ty list
 	val marshal : message -> string
