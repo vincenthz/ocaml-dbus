@@ -24,6 +24,10 @@ type pending_call
 type watch
 type timeout
 
+type service = string
+type interface = string
+type path = string
+
 type add_watch_fn = watch -> bool
 type rm_watch_fn = watch -> unit
 type toggle_watch_fn = watch -> unit
@@ -77,6 +81,8 @@ type error_name =
 	| ERR_SELINUX_SECURITY_CONTEXT_UNKNOWN
 	| ERR_ADT_AUDIT_DATA_UNKNOWN
 	| ERR_OBJECT_PATH_IN_USE
+
+external string_of_error_name : error_name -> string = "stub_dbus_string_of_error_name"
 
 type ty_sig =
 	| SigByte
@@ -236,7 +242,7 @@ external create : message_type -> message = "stub_dbus_message_create"
    recommended not to use this call but use new_* calls instead that prefil
    all the required field too. *)
 
-external new_method_call : string -> string -> string -> string -> message
+external new_method_call : service -> path -> interface -> string -> message
                          = "stub_dbus_message_new_method_call"
 (** [new_method_call destination path interface method] create a new method message *)
 
@@ -244,7 +250,7 @@ external new_method_return : message -> message =
                            "stub_dbus_message_new_method_return"
 (** [new_method_return message] create a new method return message from a method message *)
 
-external new_signal : string -> string -> string -> message
+external new_signal : path -> interface -> string -> message
                     = "stub_dbus_message_new_signal"
 (** [new_signal path interface method] create a new signal message *)
 
@@ -253,7 +259,35 @@ external new_error : message -> error_name -> string -> message
 (** [new_error original_message error_name error_message] create a new error message
    from another message *)
 
-external append : message -> ty list -> unit = "stub_dbus_message_append"
+external _append : message -> ty list -> unit = "stub_dbus_message_append"
+
+let append message tys =
+	let raise_type_not_supported ty =
+		raise (Type_not_supported (Printf.sprintf "cannot append: %s" (string_of_ty ty))) in
+	let rec check_ty ty =
+		match ty with
+		(* supported basic types *)
+		| Byte _ | Bool _ | Int16 _ | UInt16 _ | Int32 _
+		| UInt32 _ | Int64 _ | UInt64 _ | Double _
+		| String _ | ObjectPath _ -> ()
+		(* supported arrays *)
+		| Array (Bytes _) | Array (Bools _) | Array (Int16s _) | Array (UInt16s _)
+		| Array (Int32s _) | Array (UInt32s _) | Array (Int64s _)
+		| Array (UInt64s _) | Array (Doubles _) | Array (Strings _)
+		| Array (ObjectPaths _) -> ()
+		(* just for getting unknown type, not supported to append *)
+		| Unknown | Array Unknowns -> raise_type_not_supported ty
+		(* ...*)
+		| Array (Structs (sigs, tys)) -> ()
+		| Array (Variants tys) -> ()
+		| Array (Dicts ((sk, sv), tys)) -> ()
+		| Array (Arrays (s, tys)) -> ()
+		| Struct tyl -> ()
+		| Variant ty -> ()
+		in
+	List.iter check_ty tys;
+	_append message tys
+
 (** [append message parameters] appends dbus parameters to the message *)
 
 external get : message -> ty list = "stub_dbus_message_get"
@@ -261,11 +295,11 @@ external get : message -> ty list = "stub_dbus_message_get"
 
 external marshal : message -> string = "stub_dbus_message_marshal"
 
-external set_path : message -> string -> unit = "stub_dbus_message_set_path"
-external set_interface : message -> string -> unit = "stub_dbus_message_set_interface"
+external set_path : message -> path -> unit = "stub_dbus_message_set_path"
+external set_interface : message -> interface -> unit = "stub_dbus_message_set_interface"
 external set_member : message -> string -> unit = "stub_dbus_message_set_member"
 external set_error_name : message -> error_name -> unit = "stub_dbus_message_set_error_name"
-external set_destination : message -> string -> unit = "stub_dbus_message_set_destination"
+external set_destination : message -> service -> unit = "stub_dbus_message_set_destination"
 external set_sender : message -> string -> unit = "stub_dbus_message_set_sender"
 external set_reply_serial : message -> int32 -> unit
                           = "stub_dbus_message_set_reply_serial"
@@ -273,23 +307,23 @@ external set_auto_start : message -> bool -> unit
                         = "stub_dbus_message_set_auto_start"
 
 
-external has_path : message -> string -> bool = "stub_dbus_message_has_path"
-external has_interface : message -> string -> bool = "stub_dbus_message_has_interface"
+external has_path : message -> path -> bool = "stub_dbus_message_has_path"
+external has_interface : message -> interface -> bool = "stub_dbus_message_has_interface"
 external has_member : message -> string -> bool = "stub_dbus_message_has_member"
-external has_destination : message -> string -> bool = "stub_dbus_message_has_destination"
+external has_destination : message -> service -> bool = "stub_dbus_message_has_destination"
 external has_sender : message -> string -> bool = "stub_dbus_message_has_sender"
 external has_signature : message -> string -> bool = "stub_dbus_message_has_signature"
 
 
 external get_type : message -> message_type = "stub_dbus_message_get_type"
-external get_path : message -> string option = "stub_dbus_message_get_path"
-external get_interface : message -> string option
+external get_path : message -> path option = "stub_dbus_message_get_path"
+external get_interface : message -> interface option
                        = "stub_dbus_message_get_interface"
 external get_member : message -> string option
                     = "stub_dbus_message_get_member"
 external get_error_name : message -> error_name option
                         = "stub_dbus_message_get_error_name"
-external get_destination : message -> string option
+external get_destination : message -> service option
                          = "stub_dbus_message_get_destination"
 external get_sender : message -> string option
                     = "stub_dbus_message_get_sender"
@@ -301,9 +335,9 @@ external get_reply_serial : message -> int32
 external get_auto_start : message -> bool
                         = "stub_dbus_message_get_auto_start"
 
-external is_signal : message -> string -> string -> bool
+external is_signal : message -> service -> string -> bool
                    = "stub_dbus_message_is_signal"
-external is_method_call : message -> string -> string -> bool
+external is_method_call : message -> service -> string -> bool
                         = "stub_dbus_message_is_method_call"
 external is_error : message -> string -> bool = "stub_dbus_message_is_error"
 end

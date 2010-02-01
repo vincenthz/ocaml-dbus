@@ -97,10 +97,15 @@ let test () =
 
 	let msg = DBus.Message.new_method_call notif_name notif_path notif_interface "X" in
 	let params = [
-		DBus.Array (DBus.Strings []);
-		DBus.Array (DBus.Dicts ((DBus.SigString, DBus.SigString), []));
-		DBus.Array (DBus.Variants []);
-		DBus.Array (DBus.Structs ([ DBus.SigString ], []));
+		DBus.Array (DBus.Strings [ "abc" ]);
+		DBus.Array (DBus.Dicts ((DBus.SigString, DBus.SigString), [ (DBus.String "key", DBus.String "value") ]));
+		DBus.Array (DBus.Variants [ DBus.String "abc" ]);
+		DBus.Variant (DBus.Array (DBus.Strings [ "abc" ]));
+		DBus.Variant (DBus.Struct [ DBus.String "abc"; DBus.Int64 10L ]);
+		DBus.Array (DBus.Structs ([ DBus.SigString ], [ [ DBus.String "x" ]; [ DBus.String "y" ] ]));
+		DBus.Array (DBus.Dicts ((DBus.SigString, DBus.SigArray DBus.SigString),
+		                        [ (DBus.String "x", DBus.Array (DBus.Strings [ "abc"; "def" ]) ) ]
+		));
 	] in
 	DBus.Message.append msg params;
 	print_dbus_ty_list (DBus.Message.get msg);

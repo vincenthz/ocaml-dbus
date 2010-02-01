@@ -27,7 +27,7 @@
 #include <caml/signals.h>
 #include <caml/callback.h>
 
-#if defined(DEBUG_APPEND_ENABLE) || defined(DEBUG_GET_ENABLE)
+#if defined(DEBUG_APPEND_ENABLE) || defined(DEBUG_GET_ENABLE) || defined(DEBUG_SIG_ENABLE)
 #include <stdio.h>
 #include <stdlib.h>
 #endif
@@ -43,6 +43,12 @@
 #define DEBUG_GET(fmt, ...)	fprintf(stderr, "debug: get: " fmt, ##__VA_ARGS__)
 #else
 #define DEBUG_GET(fmt, ...)	((void) 0)
+#endif
+
+#ifdef DEBUG_SIG_ENABLE
+#define DEBUG_SIG(fmt, ...)	fprintf(stderr, "debug: sig: " fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_SIG(fmt, ...)	((void) 0)
 #endif
 
 #define Val_none 		(Val_int(0))
@@ -275,7 +281,18 @@ static void raise_dbus_type_not_supported(char *s)
 	caml_raise_with_string(*dbus_err, s);
 }
 
+/****************** RANDOM **********************/
+value stub_dbus_string_of_error_name(value errname)
+{
+	CAMLparam1(errname);
+	CAMLlocal1(ret);
+
+	ret = caml_copy_string(__error_table[Int_val(errname)]);
+	CAMLreturn(ret);
+}
+
 /******************** BUS **********************/
+
 value stub_dbus_bus_get(value type)
 {
 	CAMLparam1(type);
@@ -1046,13 +1063,101 @@ static void message_append_basic(DBusMessageIter *iter, int c_type, value v)
 	}
 }
 
-/** generate a signature out of DBus.tysig list */
-static int mk_signature_of_sig(value list, char *s, int left)
+static int mk_signature_structs(value vstructs, char *s, int left);
+
+
+static int mk_signature_sig(value sig, char *s, int left)
 {
-	CAMLparam0();
+	int offset = 0;
+	if (Is_block(sig)) {
+		int c_type;
+
+		c_type = __type_sig_table[Tag_val(sig) + 12];
+		if (c_type == DBUS_TYPE_ARRAY) {
+			s[offset++] = DBUS_TYPE_ARRAY;
+			offset += mk_signature_sig(Field(sig, 0), s + offset, left - offset);
+		} else if (c_type == DBUS_TYPE_STRUCT) {
+			s[offset++] = '(';
+			value list = Field(sig, 0);
+			for iterate_caml_list(list, list) {
+				offset += mk_signature_sig(Field(list, 0), s + offset, left - offset);
+			}
+			s[offset++] = ')';
+		} else if (c_type == DBUS_TYPE_DICT_ENTRY) {
+			raise_dbus_type_not_supported("signature of dict");
+		}
+	} else {
+		int vsig = __type_sig_table[Int_val(sig)];
+		s[offset++] = vsig;
+	}
+	return offset;
+}
+
+static int mk_signature_dict(value ksig, value vsig, char *s, int left)
+{
 	int offset = 0;
 
-	/* FIXME: verify we don't reach 0 */
+	s[offset++] = '{';
+	offset += mk_signature_sig(ksig, s + offset, left - offset);
+	offset += mk_signature_sig(vsig, s + offset, left - offset);
+	s[offset++] = '}';
+
+	DEBUG_SIG("dict: %s (offset=%d)\n", s, offset);
+	return offset;
+}
+
+static int mk_signature_array(value ty, char *s, int left)
+{
+	int offset = 0;
+	int array_c_type;
+
+	s[offset++] = DBUS_TYPE_ARRAY;
+	array_c_type = __type_array_table[Tag_val(ty)];
+	if (IS_BASIC(array_c_type)) {
+		s[offset++] = array_c_type;
+	} else if (array_c_type == DBUS_TYPE_DICT_ENTRY) {
+		raise_dbus_type_not_supported("signature of array of dicts");
+	} else if (array_c_type == DBUS_TYPE_VARIANT) {
+		raise_dbus_type_not_supported("signature of array of variant");
+	} else if (array_c_type == DBUS_TYPE_STRUCT) {
+		offset += mk_signature_structs(ty, s + offset, left - offset);
+	} else if (array_c_type == DBUS_TYPE_ARRAY) {
+		raise_dbus_type_not_supported("signature of array of array");
+	} else {
+		raise_dbus_type_not_supported("signature of array of unknown types");
+	}
+	DEBUG_SIG("array: %s (offset=%d)\n", s, offset);
+	return offset;
+}
+
+static int mk_signature_struct(value list, char *s, int left)
+{
+	int offset = 0;
+	value v;
+
+	s[offset++] = '(';
+	for iterate_caml_list(list, list) {
+		int c_type;
+
+		v = Field(list, 0);
+		c_type = __type_table[Tag_val(v)];
+		if (IS_BASIC(c_type)) {
+			s[offset++] = c_type;
+		} else {
+			s[offset++] = '#';
+		}
+	}
+	s[offset++] = ')';
+	DEBUG_SIG("struct: %s (offset=%d)\n", s, offset);
+	return offset;
+}
+
+static int mk_signature_structs(value vstructs, char *s, int left)
+{
+	int offset = 0;
+	value list = Field(vstructs, 0); /* Structs signature */
+
+	s[offset++] = '(';
 	for iterate_caml_list(list, list) {
 		int sigty;
 		value x = Field(list, 0);
@@ -1063,19 +1168,31 @@ static int mk_signature_of_sig(value list, char *s, int left)
 			s[offset++] = sigty;
 		}
 	}
+	s[offset++] = ')';
+	DEBUG_SIG("structs: %s (offset=%d)\n", s, offset);
+	return offset;
+}
 
-	CAMLreturn(offset);
-#if 0
-	/*********** signature generator out of dbus.ty list */
-	for iterate_caml_list(tylist, tmp) {
-		value v = Field(tmp, 0);
-		int c_type = __type_table[Tag_val(v)];
+static int mk_signature_variant(value ty, char *s, int left)
+{
+	int offset = 0;
+	int c_sub_type;
 
-		signature[offset++] = c_type;
+	c_sub_type = __type_table[Tag_val(ty)];
+	DEBUG_APPEND("variant: %c (%d)\n", c_sub_type, c_sub_type);
+
+	if (IS_BASIC(c_sub_type)) {
+		s[offset++] = c_sub_type;
+	} else if (c_sub_type == DBUS_TYPE_ARRAY) {
+		offset += mk_signature_array(Field(ty, 0), s + offset, left - offset);
+	} else if (c_sub_type == DBUS_TYPE_STRUCT) {
+		offset += mk_signature_struct(Field(ty, 0), s + offset, left - offset);
+	} else {
+		/* FIXME once we know howto generate complex signature out of dbus.ty this can be removed */
+		raise_dbus_type_not_supported("container type in variant");
 	}
-	printf("signature: %s\n", signature);
-#endif
-
+	DEBUG_SIG("variant: %s (offset=%d)\n", s, offset);
+	return offset;
 }
 
 /* forward declaration since we use them recursively in array, struct .. */
@@ -1106,10 +1223,7 @@ static value message_append_array(DBusMessageIter *iter, value array)
 		dbus_message_iter_close_container(iter, &sub);
 	} else if (array_c_type == DBUS_TYPE_STRUCT) {
 		/* ocaml representation: Structs of ty_sig list * (ty list list) */
-		int so = 0;
-		signature[so++] = '(';
-		so += mk_signature_of_sig(Field(array, 0), signature + so, 256 - so);
-		signature[so++] = ')';
+		mk_signature_structs(array, signature, 256);
 
 		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
 		for iterate_caml_list(Field(array, 1), tmp) {
@@ -1125,20 +1239,11 @@ static value message_append_array(DBusMessageIter *iter, value array)
 		dbus_message_iter_close_container(iter, &sub);
 	} else if (array_c_type == DBUS_TYPE_DICT_ENTRY) {
 		/* ocaml representation: Dicts of (ty_sig * ty_sig) * ((ty * ty) list) */
-		int ksig, vsig;
 		value sigtuple = Field(array, 0);
 
 		if (Is_block(Field(sigtuple, 0)))
 			raise_dbus_type_not_supported("dict entry key cannot be a container type");
-		if (Is_block(Field(sigtuple, 1)))
-			raise_dbus_type_not_supported("dict entry value cannot be a container type");
-		ksig = __type_sig_table[Int_val(Field(sigtuple, 0))];
-		vsig = __type_sig_table[Int_val(Field(sigtuple, 1))];
-
-		signature[0] = '{';
-		signature[1] = ksig;
-		signature[2] = vsig;
-		signature[3] = '}';
+		mk_signature_dict(Field(sigtuple, 0), Field(sigtuple, 1), signature, 256);
 
 		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
 		for iterate_caml_list(Field(array, 1), tmp) {
@@ -1176,20 +1281,11 @@ static value message_append_variant(DBusMessageIter *iter, value v)
 {
 	CAMLparam1(v);
 	DBusMessageIter sub;
-	int c_sub_type;
 	char signature[256];
 
 	memset(signature, 0, sizeof(signature));
 
-	c_sub_type = __type_table[Tag_val(v)];
-	DEBUG_APPEND("variant: %c (%d)\n", c_sub_type, c_sub_type);
-
-	if (IS_BASIC(c_sub_type)) {
-		signature[0] = c_sub_type;
-	} else {
-		/* FIXME once we know howto generate complex signature out of dbus.ty this can be removed */
-		raise_dbus_type_not_supported("container type in variant");
-	}
+	mk_signature_variant(v, signature, 256);
 
 	dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, signature, &sub);
 	message_append_one(&sub, v);
@@ -1444,7 +1540,8 @@ static value message_get_array(DBusMessageIter *iter, int array_c_type, int init
 		v = message_get_array_dict(iter);
 		caml_alloc_variant_param2(r, type, Val_unit, v);
 
-		/* signature */
+		/* XXX: the signature generated is useless, the type are self sufficient to determine the signature.
+		   should be fixed someday for completeness. */
 		v = caml_alloc_tuple(2);
 		Field(v, 0) = Val_int(0); /* FIXME */
 		Field(v, 1) = Val_int(0); /* FIXME */

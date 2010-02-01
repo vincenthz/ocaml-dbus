@@ -22,6 +22,10 @@ type pending_call
 type watch
 type timeout
 
+type service = string
+type interface = string
+type path = string
+
 type add_watch_fn = watch -> bool
 type rm_watch_fn = watch -> unit
 type toggle_watch_fn = watch -> unit
@@ -128,6 +132,7 @@ and ty =
 	| Variant of ty
 
 val string_of_ty : ty -> string
+val string_of_error_name : error_name -> string
 
 module Bus :
 sig
@@ -159,40 +164,40 @@ sig
 		| Signal
 	val string_of_message_ty : message_type -> string
 	val create : message_type -> message
-	val new_method_call : string -> string -> string -> string -> message
+	val new_method_call : service -> path -> interface -> string -> message
 	val new_method_return : message -> message
-	val new_signal : string -> string -> string -> message
+	val new_signal : path -> interface -> string -> message
 	val new_error : message -> error_name -> string -> message
 	val append : message -> ty list -> unit
 	val get : message -> ty list
 	val marshal : message -> string
-	val set_path : message -> string -> unit
-	val set_interface : message -> string -> unit
+	val set_path : message -> path -> unit
+	val set_interface : message -> interface -> unit
 	val set_member : message -> string -> unit
 	val set_error_name : message -> error_name -> unit
-	val set_destination : message -> string -> unit
+	val set_destination : message -> service -> unit
 	val set_sender : message -> string -> unit
 	val set_reply_serial : message -> int32 -> unit
 	val set_auto_start : message -> bool -> unit
-	val has_path : message -> string -> bool
-	val has_interface : message -> string -> bool
+	val has_path : message -> path -> bool
+	val has_interface : message -> interface -> bool
 	val has_member : message -> string -> bool
-	val has_destination : message -> string -> bool
+	val has_destination : message -> service -> bool
 	val has_sender : message -> string -> bool
 	val has_signature : message -> string -> bool
 	val get_type : message -> message_type
-	val get_path : message -> string option
-	val get_interface : message -> string option
+	val get_path : message -> path option
+	val get_interface : message -> interface option
 	val get_member : message -> string option
 	val get_error_name : message -> error_name option
-	val get_destination : message -> string option
+	val get_destination : message -> service option
 	val get_sender : message -> string option
 	val get_signature : message -> string option
 	val get_serial : message -> int32
 	val get_reply_serial : message -> int32
 	val get_auto_start : message -> bool
-	val is_signal : message -> string -> string -> bool
-	val is_method_call : message -> string -> string -> bool
+	val is_signal : message -> interface -> string -> bool
+	val is_method_call : message -> interface -> string -> bool
 	val is_error : message -> string -> bool
 end
 
