@@ -1,5 +1,5 @@
 (*
- *	Copyright (C) 2006 Vincent Hanquez <vincent@snarc.org>
+ *	Copyright (C) 2006-2009 Vincent Hanquez <vincent@snarc.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published
@@ -14,10 +14,26 @@
  * Dbus binding
  *)
 
+exception Error of string * string
+
 type error
 type bus
 type message
 type pending_call
+
+type ty_array =
+	| Unknowns
+	| Bytes of char list
+	| Bools of bool list
+	| Int16s of int list
+	| UInt16s of int list
+	| Int32s of int32 list
+	| UInt32s of int32 list
+	| Int64s of int64 list
+	| UInt64s of int64 list
+	| Doubles of float list
+	| Strings of string list
+	| ObjectPaths of string list
 
 type ty =
 	| Unknown
@@ -32,6 +48,22 @@ type ty =
 	| Double of float
 	| String of string
 	| ObjectPath of string
+	| Array of ty_array
+
+let string_of_ty_array ty =
+	match ty with
+	| Unknowns -> []
+	| Bytes cs -> List.map (fun x -> Printf.sprintf "%C" x) cs
+	| Bools bs -> List.map (fun x -> Printf.sprintf "%b" x) bs
+	| Int16s is -> List.map (fun x -> Printf.sprintf "%d" x) is
+	| UInt16s is -> List.map (fun x -> Printf.sprintf "%d" x) is
+	| Int32s is -> List.map (fun x -> Printf.sprintf "%ld" x) is
+	| UInt32s is -> List.map (fun x -> Printf.sprintf "%ld" x) is
+	| Int64s is -> List.map (fun x -> Printf.sprintf "%Ld" x) is
+	| UInt64s is -> List.map (fun x -> Printf.sprintf "%Ld" x) is
+	| Doubles fs -> List.map (fun x -> Printf.sprintf "%g" x) fs
+	| Strings ss -> List.map (fun x -> Printf.sprintf "%S" x) ss
+	| ObjectPaths ss -> List.map (fun x -> Printf.sprintf "%S" x) ss
 
 let string_of_ty ty =
 	match ty with
@@ -47,33 +79,27 @@ let string_of_ty ty =
 	| Double d     -> Printf.sprintf "Double(%g)" d
 	| String s     -> Printf.sprintf "String(%S)" s
 	| ObjectPath s -> Printf.sprintf "ObjectPath(%S)" s
-
-(******************* ERROR *********************)
-module Error = struct
-external init : unit -> error = "stub_dbus_error_init"
-external is_set : error -> bool = "stub_dbus_error_is_set"
-external has_name : error -> string -> bool = "stub_dbus_error_has_name"
-end
+	| Array Unknowns -> Printf.sprintf "Array[...]"
+	| Array ty     -> Printf.sprintf "Array[%s]" (String.concat ", " (string_of_ty_array ty))
 
 (******************** BUS **********************)
 module Bus = struct
 type ty = Session | System | Starter
 type flags = Replace_existing
 
-external get : ty -> error -> bus = "stub_dbus_bus_get"
-external get_private : ty -> error -> bus = "stub_dbus_bus_get_private"
-external register : bus -> error -> bool = "stub_dbus_bus_register"
+external get : ty -> bus = "stub_dbus_bus_get"
+external get_private : ty -> bus = "stub_dbus_bus_get_private"
+external register : bus -> unit = "stub_dbus_bus_register"
 external set_unique_name : bus -> string -> bool
                          = "stub_dbus_bus_set_unique_name"
 external get_unique_name : bus -> string = "stub_dbus_bus_get_unique_name"
-external request_name : bus -> string -> int -> error -> unit
+external request_name : bus -> string -> int -> unit
                       = "stub_dbus_bus_request_name"
-external release_name : bus -> string -> error -> unit
+external release_name : bus -> string -> unit
                       = "stub_dbus_bus_release_name"
-external has_owner : bus -> string -> error -> bool = "stub_dbus_bus_has_owner"
-external add_match : bus -> string -> error -> unit = "stub_dbus_bus_add_match"
-external remove_match : bus -> string -> error -> unit
-                      = "stub_dbus_bus_remove_match"
+external has_owner : bus -> string -> bool = "stub_dbus_bus_has_owner"
+external add_match : bus -> string -> bool -> unit = "stub_dbus_bus_add_match"
+external remove_match : bus -> string -> bool -> unit = "stub_dbus_bus_remove_match"
 
 end
 
@@ -149,7 +175,7 @@ external send : bus -> message -> int32
               = "stub_dbus_connection_send"
 external send_with_reply : bus -> message -> int -> pending_call
               = "stub_dbus_connection_send_with_reply"
-external send_with_reply_and_block : bus -> message -> int -> error -> message
+external send_with_reply_and_block : bus -> message -> int -> message
               = "stub_dbus_connection_send_with_reply_and_block"
 external add_filter : bus -> (bus -> message -> bool) -> unit
                     = "stub_dbus_connection_add_filter"
@@ -171,3 +197,5 @@ external get_completed : pending_call -> bool
 external steal_reply : pending_call -> message
                      = "stub_dbus_pending_call_steal_reply"
 end
+
+let _ = Callback.register_exception "dbus.error" (Error ("register_callback", "register_callback"))

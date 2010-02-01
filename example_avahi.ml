@@ -49,16 +49,16 @@ and print_fields fields =
   printf "%s" (String.concat ", " (List.map string_of_ty fields))
 
 (* Perform a synchronous call to an object method. *)
-let call_method ~bus ~err ~name ~path ~interface ~methd args =
+let call_method ~bus ~name ~path ~interface ~methd args =
   (* Create the method_call message. *)
   let msg = Message.new_method_call name path interface methd in
   Message.append msg args;
   (* Send the message, get reply. *)
-  let r = Connection.send_with_reply_and_block bus msg (-1) err in
+  let r = Connection.send_with_reply_and_block bus msg (-1) in
   Message.get r
 
 (* A service has appeared on the network.  Resolve its IP address, etc. *)
-let resolve_service bus err sb_path msg =
+let resolve_service bus sb_path msg =
   let fields = Message.get msg in
   match fields with
     (* match fields in the ItemNew message from ServiceBrowser. *)
@@ -72,7 +72,7 @@ let resolve_service bus err sb_path msg =
        * the actual locations of network services found by the ServiceBrowser.
        *)
       let sr =
-	call_method ~bus ~err
+	call_method ~bus
 	  ~name:"org.freedesktop.Avahi"
 	  ~path:"/"
 	  ~interface:"org.freedesktop.Avahi.Server"
@@ -99,7 +99,7 @@ let resolve_service bus err sb_path msg =
 	   "type='signal'";
 	   "sender='org.freedesktop.Avahi.ServiceResolver'";
 	   "path='" ^ sr_path ^ "'";
-	 ]) err;
+	 ]) true;
 
       ()
 
@@ -110,7 +110,7 @@ let resolve_service bus err sb_path msg =
 (* This is called when we get a message/signal.  Could be from the
  * (global) ServiceBrowser or any of the ServiceResolver objects.
  *)
-let got_message bus err sb_path msg =
+let got_message bus sb_path msg =
   if debug then print_msg msg;
 
   let typ = Message.get_type msg in
@@ -123,7 +123,7 @@ let got_message bus err sb_path msg =
     | "org.freedesktop.Avahi.ServiceBrowser", "CacheExhausted" -> ()
     | "org.freedesktop.Avahi.ServiceBrowser", "ItemNew" ->
 	(* New service has appeared, start to resolve it. *)
-	resolve_service bus err sb_path msg
+	resolve_service bus sb_path msg
     | "org.freedesktop.Avahi.ServiceBrowser", "ItemRemove" ->
 	(* XXX Service has disappeared. *)
 	()
@@ -139,28 +139,26 @@ let got_message bus err sb_path msg =
   );
   true
 
-(* Store the connection ((bus, err) tuple).  However don't bother
+(* Store the connection bus.  However don't bother
  * connecting to D-Bus at all until the user opens the connection
  * dialog for the first time.
  *)
 let connection = ref None
 
-(* Create global error and system bus object, and create the service
+(* Create system bus object, and create the service
  * browser.  XXX Probably not robust if the daemon restarts.
  *)
 let connect () =
   match !connection with
-  | Some (bus, err) -> (bus, err, false)
+  | Some bus -> (bus, false)
   | None ->
-      let err = Error.init () in
-      let bus = Bus.get Bus.System err in
-      if Error.is_set err then failwith "error set after getting System bus";
+      let bus = Bus.get Bus.System in
 
       (* Create a new ServiceBrowser object which emits a signal whenever
        * a new network service of the type specified is found on the network.
        *)
       let sb =
-	call_method ~bus ~err
+	call_method ~bus
 	  ~name:"org.freedesktop.Avahi"
 	  ~path:"/"
 	  ~interface:"org.freedesktop.Avahi.Server"
@@ -182,7 +180,7 @@ let connect () =
       (* Register a callback to accept the signals. *)
       (* XXX This leaks memory because it is never freed. *)
       Connection.add_filter bus (
-	fun bus msg -> got_message bus err sb_path msg
+	fun bus msg -> got_message bus sb_path msg
       );
 
       (* Add a match rule so we see these all signals of interest. *)
@@ -191,13 +189,13 @@ let connect () =
 	   "type='signal'";
 	   "sender='org.freedesktop.Avahi.ServiceBrowser'";
 	   "path='" ^ sb_path ^ "'";
-	 ]) err;
+	 ]) true;
 
-      connection := Some (bus, err);
-      (bus, err, true)
+      connection := Some (bus);
+      (bus, true)
 
 let () =
-  let bus, err, just_connected = connect () in
+  let bus, just_connected = connect () in
 
   (* Wait for incoming signals. *)
   while Connection.read_write_dispatch bus (-1) do ()

@@ -1,5 +1,5 @@
 /*
- *	Copyright (C) 2006 Vincent Hanquez <vincent@snarc.org>
+ *	Copyright (C) 2006-2009 Vincent Hanquez <vincent@snarc.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published
@@ -39,13 +39,23 @@ static int __bustype_table[] = {
 	DBUS_BUS_SESSION, DBUS_BUS_SYSTEM, DBUS_BUS_STARTER, -1
 };
 
-static int __type_table[] = {
+static int __type_array_table[] = {
 	DBUS_TYPE_BYTE, DBUS_TYPE_BOOLEAN,
 	DBUS_TYPE_INT16, DBUS_TYPE_UINT16,
 	DBUS_TYPE_INT32, DBUS_TYPE_UINT32,
 	DBUS_TYPE_INT64, DBUS_TYPE_UINT64,
 	DBUS_TYPE_DOUBLE, DBUS_TYPE_STRING,
 	DBUS_TYPE_OBJECT_PATH,
+	-1
+};
+
+static int __type_table[] = {
+	DBUS_TYPE_BYTE, DBUS_TYPE_BOOLEAN,
+	DBUS_TYPE_INT16, DBUS_TYPE_UINT16,
+	DBUS_TYPE_INT32, DBUS_TYPE_UINT32,
+	DBUS_TYPE_INT64, DBUS_TYPE_UINT64,
+	DBUS_TYPE_DOUBLE, DBUS_TYPE_STRING,
+	DBUS_TYPE_OBJECT_PATH, DBUS_TYPE_ARRAY,
 	-1
 };
 
@@ -69,12 +79,6 @@ static int find_index_equal(int searched_value, int *table)
 	                         SIZEOF_FINALPTR, 10 * SIZEOF_FINALPTR);\
 	Store_field(o_con, 1, (value) c_con);
 
-void finalize_dbus_error(value v)
-{
-	dbus_error_free(DBusError_val(v));
-	free(DBusError_val(v));
-}
-
 void finalize_dbus_connection(value v)
 {
 	dbus_connection_close(DBusConnection_val(v));
@@ -97,76 +101,62 @@ void finalize_dbus_pending_call(value v)
 	dbus_pending_call_unref(DBusPendingCall_val(v));
 }
 
-/******************* ERROR *********************/
-value stub_dbus_error_init(value unit)
+static void raise_dbus_error(DBusError *error)
 {
-	CAMLparam1(unit);
-	CAMLlocal1(error);
-	DBusError *c_error = malloc(sizeof(DBusError));
-	if (!c_error)
-		caml_raise_out_of_memory();
-	dbus_error_init(c_error);
+	static value *dbus_err = NULL;
+	value args[2];
 
-	voidstar_alloc(error, c_error, finalize_dbus_error);
-	CAMLreturn(error);
-}
-
-value stub_dbus_error_is_set(value error)
-{
-	CAMLparam1(error);
-	int ret;
-
-	ret = dbus_error_is_set(DBusError_val(error));
-	CAMLreturn(Val_bool(ret));
-}
-
-value stub_dbus_error_has_name(value error, value name)
-{
-	CAMLparam2(error, name);
-	int ret;
-
-	ret = dbus_error_has_name(DBusError_val(error), String_val(name));
-	CAMLreturn(Val_bool(ret));
+	if (!dbus_err)
+		dbus_err = caml_named_value("dbus.error");
+	args[0] = caml_copy_string(error->name ? error->name : "");
+	args[1] = caml_copy_string(error->message ? error->message : "");
+	caml_raise_with_args(*dbus_err, 2, args);
 }
 
 /******************** BUS **********************/
-value stub_dbus_bus_get(value type, value error)
+value stub_dbus_bus_get(value type)
 {
-	CAMLparam2(type, error);
+	CAMLparam1(type);
 	CAMLlocal1(con);
 	DBusConnection *c_con;
+	DBusError error;
 
-	c_con = dbus_bus_get(__bustype_table[Int_val(type)],
-	                     DBusError_val(error));
+	dbus_error_init(&error);
+	c_con = dbus_bus_get(__bustype_table[Int_val(type)], &error);
 	if (!c_con)
-		failwith("dbus_bus_get");
+		raise_dbus_error(&error);
 
 	voidstar_alloc(con, c_con, finalize_dbus_connection_unref);
 	CAMLreturn(con);
 }
 
-value stub_dbus_bus_get_private(value type, value error)
+value stub_dbus_bus_get_private(value type)
 {
-	CAMLparam2(type, error);
+	CAMLparam1(type);
 	CAMLlocal1(con);
 	DBusConnection *c_con;
+	DBusError error;
 
-	c_con = dbus_bus_get_private(__bustype_table[Int_val(type)],
-	                             DBusError_val(error));
+	dbus_error_init(&error);
+	c_con = dbus_bus_get_private(__bustype_table[Int_val(type)], &error);
 	if (!c_con)
-		failwith("dbus_bus_get");
+		raise_dbus_error(&error);
 
 	voidstar_alloc(con, c_con, finalize_dbus_connection);
 	CAMLreturn(con);
 }
 
-value stub_dbus_bus_register(value bus, value error)
+value stub_dbus_bus_register(value bus)
 {
-	CAMLparam2(bus, error);
+	CAMLparam1(bus);
+	DBusError error;
 	int ret;
 
-	ret = dbus_bus_register(DBusConnection_val(bus), DBusError_val(error));
-	CAMLreturn(Val_bool(ret));
+	dbus_error_init(&error);
+	ret = dbus_bus_register(DBusConnection_val(bus), &error);
+	if (ret != TRUE)
+		raise_dbus_error(&error);
+	CAMLreturn(Val_unit);
 }
 
 value stub_dbus_bus_set_unique_name(value bus, value name)
@@ -191,50 +181,71 @@ value stub_dbus_bus_get_unique_name(value bus)
 	CAMLreturn(ret);
 }
 
-value stub_dbus_bus_request_name(value bus, value name,
-                                 value flags, value error)
+value stub_dbus_bus_request_name(value bus, value name, value flags)
 {
-	CAMLparam4(bus, name, flags, error);
-
-	dbus_bus_request_name(DBusConnection_val(bus), String_val(name),
-	                      Int_val(flags), DBusError_val(error));
-	CAMLreturn(Val_unit);
-}
-
-value stub_dbus_bus_release_name(value bus, value name, value error)
-{
-	CAMLparam3(bus, name, error);
-
-	dbus_bus_release_name(DBusConnection_val(bus), String_val(name),
-	                      DBusError_val(error));
-	CAMLreturn(Val_unit);
-}
-
-value stub_dbus_bus_has_owner(value bus, value name, value error)
-{
-	CAMLparam3(bus, name, error);
+	CAMLparam3(bus, name, flags);
+	DBusError error;
 	int ret;
 
-	ret = dbus_bus_name_has_owner(DBusConnection_val(bus),
-	                              String_val(name), DBusError_val(error));
-	CAMLreturn(Val_bool(ret));
-}
-
-value stub_dbus_bus_add_match(value bus, value s, value error)
-{
-	CAMLparam3(bus, s, error);
-
-	dbus_bus_add_match(DBusConnection_val(bus), String_val(s),
-	                   DBusError_val(error));
+	dbus_error_init(&error);
+	ret = dbus_bus_request_name(DBusConnection_val(bus), String_val(name),
+	                            Int_val(flags), &error);
+	if (ret == -1)
+		raise_dbus_error(&error);
 	CAMLreturn(Val_unit);
 }
 
-value stub_dbus_bus_remove_match(value bus, value s, value error)
+value stub_dbus_bus_release_name(value bus, value name)
 {
-	CAMLparam3(bus, s, error);
+	CAMLparam2(bus, name);
+	DBusError error;
+	int ret;
 
+	dbus_error_init(&error);
+	ret = dbus_bus_release_name(DBusConnection_val(bus), String_val(name), &error);
+	if (ret == -1)
+		raise_dbus_error(&error);
+	CAMLreturn(Val_unit);
+}
+
+value stub_dbus_bus_has_owner(value bus, value name)
+{
+	CAMLparam2(bus, name);
+	DBusError error;
+	int ret;
+
+	dbus_error_init(&error);
+	ret = dbus_bus_name_has_owner(DBusConnection_val(bus), String_val(name), &error);
+	if (ret != TRUE && dbus_error_is_set(&error))
+		raise_dbus_error(&error);
+	CAMLreturn(Val_bool(ret == TRUE));
+}
+
+value stub_dbus_bus_add_match(value bus, value s, value blocking)
+{
+	CAMLparam3(bus, s, blocking);
+	DBusError error;
+
+	dbus_error_init(&error);
+	dbus_bus_add_match(DBusConnection_val(bus), String_val(s),
+	                   (Bool_val(blocking) ? &error : NULL));
+	if (Bool_val(blocking) && dbus_error_is_set(&error))
+		raise_dbus_error(&error);
+
+	CAMLreturn(Val_unit);
+}
+
+value stub_dbus_bus_remove_match(value bus, value s, value blocking)
+{
+	CAMLparam3(bus, s, blocking);
+	DBusError error;
+
+	dbus_error_init(&error);
 	dbus_bus_remove_match(DBusConnection_val(bus), String_val(s),
-	                      DBusError_val(error));
+	                      (Bool_val(blocking) ? &error : NULL));
+	if (Bool_val(blocking) && dbus_error_is_set(&error))
+		raise_dbus_error(&error);
+
 	CAMLreturn(Val_unit);
 }
 
@@ -272,20 +283,21 @@ value stub_dbus_connection_send_with_reply(value bus, value message,
 }
 
 value stub_dbus_connection_send_with_reply_and_block(value bus, value message,
-                                                     value timeout,
-                                                     value error)
+                                                     value timeout)
 {
-	CAMLparam4(bus, message, timeout, error);
+	CAMLparam3(bus, message, timeout);
 	CAMLlocal1(rmsg);
 	DBusMessage *c_rmsg;
+	DBusError error;
 
+	dbus_error_init(&error);
 	c_rmsg = dbus_connection_send_with_reply_and_block(
 	                                               DBusConnection_val(bus),
 	                                               DBusMessage_val(message),
 	                                               Int_val (timeout),
-	                                               DBusError_val(error));
+	                                               &error);
 	if (!c_rmsg)
-		caml_failwith("dbus_connection_send_with_reply_and_block");
+		raise_dbus_error(&error);
 
 	voidstar_alloc(rmsg, c_rmsg, finalize_dbus_message);
 	CAMLreturn(rmsg);
@@ -576,169 +588,259 @@ value stub_dbus_message_set_auto_start(value message, value v)
 	CAMLreturn(Val_unit);
 }
 
-value stub_dbus_message_append(value message, value list)
-{
-	CAMLparam2(message, list);
-	CAMLlocal3(tmp, type, v);
-	DBusMessage *c_msg;
-	DBusMessageIter iter;
+#define IS_BASIC(ty) \
+	((ty) == DBUS_TYPE_BYTE || \
+	 (ty) == DBUS_TYPE_BOOLEAN || \
+	 (ty) == DBUS_TYPE_UINT16 || (ty) == DBUS_TYPE_INT16 || \
+	 (ty) == DBUS_TYPE_UINT32 || (ty) == DBUS_TYPE_INT32 || \
+	 (ty) == DBUS_TYPE_UINT64 || (ty) == DBUS_TYPE_INT64 || \
+	 (ty) == DBUS_TYPE_DOUBLE || \
+	 (ty) == DBUS_TYPE_OBJECT_PATH || \
+	 (ty) == DBUS_TYPE_STRING)
 
-	c_msg = DBusMessage_val(message);
-	dbus_message_iter_init_append(c_msg, &iter);
-	tmp = list;
-	while (tmp != Val_emptylist) {
+static void message_append_basic(DBusMessageIter *iter, int c_type, value v)
+{
+	switch (c_type) {
+	case DBUS_TYPE_BYTE: {
+		char x;
+		x = Int_val(v);
+		dbus_message_iter_append_basic(iter, c_type, &x);
+		break;
+		}
+	case DBUS_TYPE_BOOLEAN: {
+		int x;
+		x = Bool_val(v);
+		dbus_message_iter_append_basic(iter, c_type, &x);
+		break;
+		}
+	case DBUS_TYPE_UINT16:
+	case DBUS_TYPE_INT16: {
+		int x;
+		x = Int_val(v);
+		dbus_message_iter_append_basic(iter, c_type, &x);
+		break;
+		}
+	case DBUS_TYPE_UINT32:
+	case DBUS_TYPE_INT32: {
+		int x;
+		x = Int32_val(v);
+		dbus_message_iter_append_basic(iter, c_type, &x);
+		break;
+		}
+	case DBUS_TYPE_UINT64:
+	case DBUS_TYPE_INT64: {
+		unsigned long long x;
+		x = Int64_val(v);
+		dbus_message_iter_append_basic(iter, c_type, &x);
+		break;
+		}
+	case DBUS_TYPE_DOUBLE: {
+		double d;
+		d = Double_val(v);
+		dbus_message_iter_append_basic(iter, c_type, &d);
+		break;
+		}
+	case DBUS_TYPE_OBJECT_PATH:
+	case DBUS_TYPE_STRING: {
+		char *s = strdup(String_val(v));
+		dbus_message_iter_append_basic(iter, c_type, &s);
+		break;
+		}
+	}
+}
+
+static value message_append_rec(DBusMessageIter *iter, value list)
+{
+	CAMLparam1(list);
+	CAMLlocal3(tmp, type, v);
+
+	for (tmp = list; tmp != Val_emptylist; tmp = Field(tmp, 1)) {
 		int c_type;
 
 		type = Field(tmp, 0);
 		c_type = __type_table[Tag_val(type)];
 		v = Field(type, 0);
-		switch (c_type) {
-		case DBUS_TYPE_BYTE: {
-			char x;
-			x = Int_val(v);
-			dbus_message_iter_append_basic(&iter, c_type, &x);
-			break;
+		if (IS_BASIC(c_type)) {
+			message_append_basic(iter, c_type, v);
+		} else if (c_type == DBUS_TYPE_ARRAY) {
+			DBusMessageIter sub;
+			char signature[2];
+			int c_type;
+
+			c_type = __type_array_table[Tag_val(v)];
+			signature[0] = (char) c_type;
+			signature[1] = '\0';
+
+			dbus_message_iter_open_container(iter, c_type, signature, &sub);
+			v = Field(v, 0);
+			for (v = Field(v, 0); v != Val_emptylist; v = Field(v, 1)) {
+				message_append_basic(&sub, c_type, Field(v, 0));
 			}
-		case DBUS_TYPE_BOOLEAN: {
-			int x;
-			x = Bool_val(v);
-			dbus_message_iter_append_basic(&iter, c_type, &x);
-			break;
-			}
-		case DBUS_TYPE_UINT16:
-		case DBUS_TYPE_INT16: {
-			int x;
-			x = Int_val(v);
-			dbus_message_iter_append_basic(&iter, c_type, &x);
-			break;
-			}
-		case DBUS_TYPE_UINT32:
-		case DBUS_TYPE_INT32: {
-			int x;
-			x = Int32_val(v);
-			dbus_message_iter_append_basic(&iter, c_type, &x);
-			break;
-			}
-		case DBUS_TYPE_UINT64:
-		case DBUS_TYPE_INT64: {
-			unsigned long long x;
-			x = Int64_val(v);
-			dbus_message_iter_append_basic(&iter, c_type, &x);
-			break;
-			}
-		case DBUS_TYPE_DOUBLE: {
-			double d;
-			d = Double_val(v);
-			dbus_message_iter_append_basic(&iter, c_type, &d);
-			break;
-			}
-		case DBUS_TYPE_OBJECT_PATH:
-		case DBUS_TYPE_STRING: {
-			char *s = strdup(String_val(v));
-			dbus_message_iter_append_basic(&iter, c_type, &s);
-			break;
-			}
-		default:
+			dbus_message_iter_close_container(iter, &sub);
+		} else {
 			caml_failwith("internal error");
-			break;
 		}
-		tmp = Field(tmp, 1);
 	}
 	CAMLreturn(Val_unit);
+}
+
+value stub_dbus_message_append(value message, value list)
+{
+	CAMLparam2(message, list);
+	DBusMessage *c_msg;
+	DBusMessageIter iter;
+
+	c_msg = DBusMessage_val(message);
+	dbus_message_iter_init_append(c_msg, &iter);
+	message_append_rec(&iter, list);
+
+	CAMLreturn(Val_unit);
+}
+
+static value dbus_type_to_caml(DBusMessageIter *iter, int initial_has_next, int alloc_variant);
+
+static value message_basic_type_to_caml(DBusMessageIter *iter, int c_type)
+{
+	CAMLparam0();
+	CAMLlocal1(v);
+	switch (c_type) {
+	case DBUS_TYPE_BYTE: {
+		char c;
+		dbus_message_iter_get_basic(iter, &c);
+		v = Val_int(c);
+		break;
+		}
+	case DBUS_TYPE_BOOLEAN: {
+		int i;
+		dbus_message_iter_get_basic(iter, &i);
+		v = Val_bool(i);
+		break;
+		}
+	case DBUS_TYPE_UINT16:
+	case DBUS_TYPE_INT16: {
+		int i;
+		dbus_message_iter_get_basic(iter, &i);
+		v = Val_int(i);
+		break;
+		}
+	case DBUS_TYPE_UINT32:
+	case DBUS_TYPE_INT32: {
+		int i;
+		dbus_message_iter_get_basic(iter, &i);
+		v = caml_copy_int32(i);
+		break;
+		}
+	case DBUS_TYPE_UINT64:
+	case DBUS_TYPE_INT64: {
+		unsigned long long ld;
+		dbus_message_iter_get_basic(iter, &ld);
+		v = caml_copy_int64(ld);
+		break;
+		}
+	case DBUS_TYPE_OBJECT_PATH:
+	case DBUS_TYPE_STRING: {
+		char *s;
+		dbus_message_iter_get_basic(iter, &s);
+		v = caml_copy_string(s);
+		break;
+		}
+	case DBUS_TYPE_DOUBLE: {
+		double d;
+		dbus_message_iter_get_basic(iter, &d);
+		v = caml_copy_double(d);
+		break;
+		}
+	default:
+		v = Val_int(0);
+		break;
+	}
+	CAMLreturn(v);
+}
+
+static value dbus_array_to_caml(DBusMessageIter *iter, int initial_has_next)
+{
+	CAMLparam0();
+	CAMLlocal2(r, v);
+	int c_type, type;
+
+	c_type = dbus_message_iter_get_arg_type(iter);
+	type = find_index_equal(c_type, __type_array_table);
+	/* check if we know the type */
+	if (type != -1) {
+		v = dbus_type_to_caml(iter, 1, 0);
+
+		r = caml_alloc_small(1, type);
+		Field(r, 0) = v;
+	} else {
+		r = Val_int(0);
+	}
+
+	CAMLreturn(r);
+}
+
+static value dbus_type_to_caml(DBusMessageIter *iter, int initial_has_next, int alloc_variant)
+{
+	CAMLparam0();
+	CAMLlocal4(tmp, list, v, r);
+	int has_next;
+
+	/* initialize local caml values */
+	tmp = list = Val_emptylist;
+	r = Val_unit;
+	v = Val_unit;
+
+	has_next = initial_has_next;
+	while (has_next) {
+		int c_type, type;
+
+		c_type = dbus_message_iter_get_arg_type(iter);
+		type = find_index_equal(c_type, __type_table);
+		if (IS_BASIC(c_type)) {
+			v = message_basic_type_to_caml(iter, c_type);
+			if (alloc_variant) {
+				r = caml_alloc_small(1, type);
+				Field(r, 0) = v;
+			}
+		} else if (c_type == DBUS_TYPE_ARRAY) {
+			DBusMessageIter sub;
+			dbus_message_iter_recurse(iter, &sub);
+
+			v = dbus_array_to_caml(&sub, 1);
+			if (alloc_variant) {
+				r = caml_alloc_small(1, type);
+				Field(r, 0) = v;
+			}
+		} else {
+			if (alloc_variant)
+				r = Val_int(0);
+			else
+				v = Val_int(0);
+			break;
+		}
+
+		tmp = caml_alloc_small(2, Tag_cons);
+		Field(tmp, 0) = (alloc_variant ? r : v);
+		Field(tmp, 1) = list;
+		list = tmp;
+
+		has_next = dbus_message_iter_next(iter);
+	}
+	CAMLreturn(list);
 }
 
 value stub_dbus_message_get(value message)
 {
 	CAMLparam1(message);
-	CAMLlocal4(tmp, list, v, r);
+	CAMLlocal1(v);
 	DBusMessage *c_msg;
 	DBusMessageIter args;
 	int has_next;
 
 	c_msg = DBusMessage_val(message);
-	tmp = list = Val_emptylist;
-	v = Val_unit;
-
 	has_next = dbus_message_iter_init(c_msg, &args);
-	while (has_next) {
-		int c_type, type;
+	v = dbus_type_to_caml(&args, has_next, 1);
 
-		c_type = dbus_message_iter_get_arg_type(&args);
-		type = find_index_equal(c_type, __type_table);
-		switch (c_type) {
-		case DBUS_TYPE_BYTE: {
-			char c;
-			dbus_message_iter_get_basic(&args, &c);
-			v = Val_int(c);
-			r = caml_alloc_small(1, type);
-			Field(r, 0) = v;
-			break;
-			}
-		case DBUS_TYPE_BOOLEAN: {
-			int i;
-			dbus_message_iter_get_basic(&args, &i);
-			v = Val_bool(i);
-			r = caml_alloc_small(1, type);
-			Field(r, 0) = v;
-			break;
-			}
-		case DBUS_TYPE_UINT16:
-		case DBUS_TYPE_INT16: {
-			int i;
-			dbus_message_iter_get_basic(&args, &i);
-			v = Val_int(i);
-			r = caml_alloc_small(1, type);
-			Field(r, 0) = v;
-			break;
-			}
-		case DBUS_TYPE_UINT32:
-		case DBUS_TYPE_INT32: {
-			int i;
-			dbus_message_iter_get_basic(&args, &i);
-			v = caml_copy_int32(i);
-			r = caml_alloc_small(1, type);
-			Field(r, 0) = v;
-			break;
-			}
-		case DBUS_TYPE_UINT64:
-		case DBUS_TYPE_INT64: {
-			unsigned long long ld;
-			dbus_message_iter_get_basic(&args, &ld);
-			v = caml_copy_int64(ld);
-			r = caml_alloc_small(1, type);
-			Field(r, 0) = v;
-			break;
-			}
-		case DBUS_TYPE_OBJECT_PATH:
-		case DBUS_TYPE_STRING: {
-			char *s;
-			dbus_message_iter_get_basic(&args, &s);
-			v = caml_copy_string(s);
-			r = caml_alloc_small(1, type);
-			Field(r, 0) = v;
-			break;
-			}
-		case DBUS_TYPE_DOUBLE: {
-			double d;
-			dbus_message_iter_get_basic(&args, &d);
-			v = caml_copy_double(d);
-			r = caml_alloc_small(1, type);
-			Field(r, 0) = v;
-			break;
-			}
-		default:
-			r = Val_int(0);
-			break;
-		}
-
-		tmp = caml_alloc_small(2, Tag_cons);
-		Field(tmp, 0) = r;
-		Field(tmp, 1) = list;
-		list = tmp;
-
-		has_next = dbus_message_iter_next(&args);
-	}
-	CAMLreturn(list);
+	CAMLreturn(v);
 }
 
 value stub_dbus_message_is_signal(value message, value interface,

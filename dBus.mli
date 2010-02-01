@@ -1,5 +1,5 @@
 (*
- *	Copyright (C) 2006 Vincent Hanquez <vincent@snarc.org>
+ *	Copyright (C) 2006-2009 Vincent Hanquez <vincent@snarc.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published
@@ -14,10 +14,27 @@
  * Dbus binding
  *)
 
+exception Error of string * string
+
 type error
 type bus
 type message
 type pending_call
+
+type ty_array =
+	| Unknowns
+	| Bytes of char list
+	| Bools of bool list
+	| Int16s of int list
+	| UInt16s of int list
+	| Int32s of int32 list
+	| UInt32s of int32 list
+	| Int64s of int64 list
+	| UInt64s of int64 list
+	| Doubles of float list
+	| Strings of string list
+	| ObjectPaths of string list
+
 type ty =
 	| Unknown
 	| Byte of char
@@ -31,31 +48,25 @@ type ty =
 	| Double of float
 	| String of string
 	| ObjectPath of string
+	| Array of ty_array
 
 val string_of_ty : ty -> string
-
-module Error :
-sig
-	val init : unit -> error
-	val is_set : error -> bool
-	val has_name : error -> string -> bool
-end
 
 module Bus :
 sig
 	type ty = Session | System | Starter
 	type flags = Replace_existing
 
-	val get : ty -> error -> bus
-	val get_private : ty -> error -> bus
-	val register : bus -> error -> bool
+	val get : ty -> bus
+	val get_private : ty -> bus
+	val register : bus -> unit
 	val set_unique_name : bus -> string -> bool
 	val get_unique_name : bus -> string
-	val request_name : bus -> string -> int -> error -> unit
-	val release_name : bus -> string -> error -> unit
-	val has_owner : bus -> string -> error -> bool
-	val add_match : bus -> string -> error -> unit
-	val remove_match : bus -> string -> error -> unit
+	val request_name : bus -> string -> int -> unit
+	val release_name : bus -> string -> unit
+	val has_owner : bus -> string -> bool
+	val add_match : bus -> string -> bool -> unit
+	val remove_match : bus -> string -> bool -> unit
 end
 
 module Message :
@@ -108,7 +119,7 @@ module Connection :
 sig
 	val send : bus -> message -> int32
 	val send_with_reply : bus -> message -> int -> pending_call
-	val send_with_reply_and_block : bus -> message -> int -> error -> message
+	val send_with_reply_and_block : bus -> message -> int -> message
 	val add_filter : bus -> (bus -> message -> bool) -> unit
 	val flush : bus -> unit
 	val read_write : bus -> int -> bool

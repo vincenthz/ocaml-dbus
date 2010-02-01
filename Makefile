@@ -76,5 +76,20 @@ uninstall:
 test: dBus.cma test.ml
 	$(OCAMLC) -o $@ unix.cma $+
 
+.PHONY: example
+example: example_avahi.opt example_nm.opt
+
+example_avahi: dBus.cma example_avahi.ml
+	$(OCAMLC) -o $@ unix.cma $+
+
+example_avahi.opt: dBus.cmxa example_avahi.ml
+	$(OCAMLOPT) -o $@ -cclib -L. $+
+
+example_nm: dBus.cma example_nm.ml
+	$(OCAMLC) -o $@ unix.cma $+
+
+example_nm.opt: dBus.cmxa example_nm.ml
+	$(OCAMLOPT) -o $@ -cclib -L. $+
+
 clean:
 	rm -f *.o *.so *.a *.cmo *.cmi *.cma *.cmx *.cmxa $(LIBS) $(PROGRAMS)
