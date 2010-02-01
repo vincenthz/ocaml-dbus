@@ -133,14 +133,17 @@ module Bus :
 sig
 	type ty = Session | System | Starter
 	type flags = Replace_existing
+	type grab_flag = AllowReplacement | ReplaceExisting | DoNotQueue
+	type request_reply = PrimaryOwner | InQueue | Exists | AlreadyOwner | ReqUnknown of int
+	type release_reply = Released | NonExistent | NotOwner | RelUnknown of int
 
 	val get : ty -> bus
 	val get_private : ty -> bus
 	val register : bus -> unit
 	val set_unique_name : bus -> string -> bool
 	val get_unique_name : bus -> string
-	val request_name : bus -> string -> int -> unit
-	val release_name : bus -> string -> unit
+	val request_name : bus -> string -> grab_flag list -> request_reply
+	val release_name : bus -> string -> release_reply
 	val has_owner : bus -> string -> bool
 	val add_match : bus -> string -> bool -> unit
 	val remove_match : bus -> string -> bool -> unit
@@ -240,4 +243,10 @@ sig
 	val get_interval : timeout -> int
 	val get_enabled : timeout -> bool
 	val handle : timeout -> unit
+end
+
+module Helper :
+sig
+	val new_message_request_name : string -> Bus.grab_flag list -> message
+	val new_message_release_name : string -> message
 end

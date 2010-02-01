@@ -353,7 +353,7 @@ value stub_dbus_bus_request_name(value bus, value name, value flags)
 	                            Int_val(flags), &error);
 	if (ret == -1)
 		raise_dbus_error(&error);
-	CAMLreturn(Val_unit);
+	CAMLreturn(Val_int(ret));
 }
 
 value stub_dbus_bus_release_name(value bus, value name)
@@ -366,7 +366,7 @@ value stub_dbus_bus_release_name(value bus, value name)
 	ret = dbus_bus_release_name(DBusConnection_val(bus), String_val(name), &error);
 	if (ret == -1)
 		raise_dbus_error(&error);
-	CAMLreturn(Val_unit);
+	CAMLreturn(Val_int(ret));
 }
 
 value stub_dbus_bus_has_owner(value bus, value name)

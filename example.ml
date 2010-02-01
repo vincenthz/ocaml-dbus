@@ -107,6 +107,32 @@ let test () =
 	()
 
 (*****************************************************************************)
+(****************** Request Name *********************************************)
+(*****************************************************************************)
+let service () =
+	let bus = DBus.Bus.get DBus.Bus.Session in
+	let serv = "org.test.dbus.ocaml.bindings" in
+	let rep = DBus.Bus.request_name bus serv [ DBus.Bus.DoNotQueue ] in
+	let repstr = match rep with
+		| DBus.Bus.PrimaryOwner -> "primary ownwer"
+		| DBus.Bus.InQueue -> "in queue"
+		| DBus.Bus.Exists -> "exists"
+		| DBus.Bus.AlreadyOwner -> "already owner"
+		| DBus.Bus.ReqUnknown i -> Printf.sprintf "unknown %d" i
+		in
+	Printf.printf "grabbing %s : %s\n" serv repstr;
+
+	let rep = DBus.Bus.release_name bus serv in
+	let repstr = match rep with
+		| DBus.Bus.Released -> "released"
+		| DBus.Bus.NonExistent -> "non existent"
+		| DBus.Bus.NotOwner -> "not owner"
+		| DBus.Bus.RelUnknown i -> Printf.sprintf "unknown %d" i
+		in
+	Printf.printf "releasing %s : %s\n" serv repstr;
+	()
+
+(*****************************************************************************)
 (*****************************************************************************)
 (*****************************************************************************)
 let () =
@@ -115,4 +141,5 @@ let () =
 	| "notification" -> example_notification ();
 	| "avahi"        -> ()
 	| "test"         -> test ()
+	| "service"      -> service ()
 	| _              -> ()

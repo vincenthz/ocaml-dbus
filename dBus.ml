@@ -170,6 +170,32 @@ and string_of_ty ty =
 module Bus = struct
 type ty = Session | System | Starter
 type flags = Replace_existing
+type grab_flag =
+	| AllowReplacement
+	| ReplaceExisting
+	| DoNotQueue
+type request_reply = PrimaryOwner | InQueue | Exists | AlreadyOwner | ReqUnknown of int
+type release_reply = Released | NonExistent | NotOwner | RelUnknown of int
+
+let int_of_grab_flag flag =
+	match flag with
+	| AllowReplacement -> 0x1
+	| ReplaceExisting  -> 0x2
+	| DoNotQueue       -> 0x4
+let request_reply_of_int i =
+	match i with
+	| 1 -> PrimaryOwner
+	| 2 -> InQueue
+	| 3 -> Exists
+	| 4 -> AlreadyOwner
+	| _ -> ReqUnknown i
+
+let release_reply_of_int i =
+	match i with
+	| 1 -> Released
+	| 2 -> NonExistent
+	| 3 -> NotOwner
+	| _ -> RelUnknown i
 
 external get : ty -> bus = "stub_dbus_bus_get"
 external get_private : ty -> bus = "stub_dbus_bus_get_private"
@@ -177,10 +203,16 @@ external register : bus -> unit = "stub_dbus_bus_register"
 external set_unique_name : bus -> string -> bool
                          = "stub_dbus_bus_set_unique_name"
 external get_unique_name : bus -> string = "stub_dbus_bus_get_unique_name"
-external request_name : bus -> string -> int -> unit
+external _request_name : bus -> string -> int -> int
                       = "stub_dbus_bus_request_name"
-external release_name : bus -> string -> unit
+let request_name bus name flags =
+	let iflags = List.map int_of_grab_flag flags in
+	let flagval = List.fold_left (fun acc i -> acc lor i) 0 iflags in
+	request_reply_of_int (_request_name bus name flagval)
+
+external _release_name : bus -> string -> int
                       = "stub_dbus_bus_release_name"
+let release_name bus name = release_reply_of_int (_release_name bus name)
 external has_owner : bus -> string -> bool = "stub_dbus_bus_has_owner"
 external add_match : bus -> string -> bool -> unit = "stub_dbus_bus_add_match"
 external remove_match : bus -> string -> bool -> unit = "stub_dbus_bus_remove_match"
@@ -356,6 +388,25 @@ module Timeout = struct
 external get_interval : timeout -> int = "stub_dbus_timeout_get_interval"
 external get_enabled : timeout -> bool = "stub_dbus_timeout_get_enabled"
 external handle : timeout -> unit = "stub_dbus_timeout_handle"
+
+end
+
+module Helper = struct
+
+let dbus_dest = "org.freedesktop.DBus"
+let dbus_intf = "org.freedesktop.DBus"
+
+let new_message_request_name name flags =
+	let iflags = List.map Bus.int_of_grab_flag flags in
+	let flagval = List.fold_left (fun acc i -> acc lor i) 0 iflags in
+	let msg = Message.new_method_call dbus_dest "/" dbus_intf "RequestName" in
+	Message.append msg [ String name; UInt32 (Int32.of_int flagval) ];
+	msg
+
+let new_message_release_name name =
+	let msg = Message.new_method_call dbus_dest "/" dbus_intf "ReleaseName" in
+	Message.append msg [ String name; ];
+	msg
 
 end
 
