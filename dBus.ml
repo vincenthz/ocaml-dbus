@@ -312,7 +312,7 @@ module Timeout = struct
 
 external get_interval : timeout -> int = "stub_dbus_timeout_get_interval"
 external get_enabled : timeout -> bool = "stub_dbus_timeout_get_enabled"
-external handle : timeout -> unit = "stub_dbus_watch_timeout"
+external handle : timeout -> unit = "stub_dbus_timeout_handle"
 
 end
 

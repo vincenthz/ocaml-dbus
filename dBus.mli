@@ -166,6 +166,7 @@ sig
 	val dispatch : bus -> dispatch_status
 	val get_fd : bus -> Unix.file_descr
 	val set_watch_functions : bus -> watch_fns -> unit
+	val set_timeout_functions : bus -> timeout_fns -> unit
 	val get_max_message_size : bus -> int
 	val set_max_message_size : bus -> int -> unit
 	val get_max_received_size : bus -> int
