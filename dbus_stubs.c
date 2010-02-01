@@ -281,6 +281,43 @@ static void raise_dbus_type_not_supported(char *s)
 	caml_raise_with_string(*dbus_err, s);
 }
 
+/****************** signature helpers ***********/
+struct stub_dbus_sig {
+	int offset;
+	int error;
+	char data[256];
+};
+
+static void signature_init(struct stub_dbus_sig *sig)
+{
+	sig->offset = 0;
+	sig->error = 0;
+	memset(sig->data, 0, 256);
+}
+
+static void signature_append(struct stub_dbus_sig *sig, char c)
+{
+	if (sig->offset == 256) {
+		sig->error++;
+		return;
+	}
+	sig->data[sig->offset++] = c;
+}
+
+static int signature_has_error(struct stub_dbus_sig *sig)
+{
+	return sig->error;
+}
+
+static char * signature_data(struct stub_dbus_sig *sig)
+{
+	return sig->data;
+}
+
+#define CHECK_SIG_ERROR(sig) \
+		if (signature_has_error(sig)) \
+			raise_dbus_type_not_supported("signature is too big");
+
 /****************** RANDOM **********************/
 value stub_dbus_string_of_error_name(value errname)
 {
@@ -1098,151 +1135,128 @@ static void message_append_basic(DBusMessageIter *iter, int c_type, value v)
 	}
 }
 
-static int mk_signature_structs(value vstructs, char *s, int left);
-static int mk_signature_arrays(value arraysig, char *s, int left);
+static void mk_signature_structs(value vstructs, struct stub_dbus_sig *sig);
+static void mk_signature_arrays(value arraysig, struct stub_dbus_sig *sig);
 
-static int mk_signature_sig(value sig, char *s, int left)
+static void mk_signature_sig(value sigval, struct stub_dbus_sig *sig)
 {
-	int offset = 0;
-	if (Is_block(sig)) {
+	if (Is_block(sigval)) {
 		int c_type;
 
-		c_type = __type_sig_table[Tag_val(sig) + 12];
+		c_type = __type_sig_table[Tag_val(sigval) + 12];
 		if (c_type == DBUS_TYPE_ARRAY) {
-			s[offset++] = DBUS_TYPE_ARRAY;
-			offset += mk_signature_sig(Field(sig, 0), s + offset, left - offset);
+			signature_append(sig, DBUS_TYPE_ARRAY);
+			mk_signature_sig(Field(sigval, 0), sig);
 		} else if (c_type == DBUS_TYPE_STRUCT) {
-			s[offset++] = '(';
-			value list = Field(sig, 0);
+			signature_append(sig, '(');
+			value list = Field(sigval, 0);
 			for iterate_caml_list(list, list) {
-				offset += mk_signature_sig(Field(list, 0), s + offset, left - offset);
+				mk_signature_sig(Field(list, 0), sig);
 			}
-			s[offset++] = ')';
+			signature_append(sig, ')');
 		} else if (c_type == DBUS_TYPE_DICT_ENTRY) {
-			value ksig = Field(sig, 0);
-			value vsig = Field(sig, 1);
-			s[offset++] = 'a';
-			s[offset++] = '{';
-			offset += mk_signature_sig(ksig, s + offset, left - offset);
-			offset += mk_signature_sig(vsig, s + offset, left - offset);
-			s[offset++] = '}';
+			value ksig = Field(sigval, 0);
+			value vsig = Field(sigval, 1);
+			signature_append(sig, 'a');
+			signature_append(sig, '{');
+			mk_signature_sig(ksig, sig);
+			mk_signature_sig(vsig, sig);
+			signature_append(sig, '}');
 		}
 	} else {
-		int vsig = __type_sig_table[Int_val(sig)];
-		s[offset++] = vsig;
+		int vsig = __type_sig_table[Int_val(sigval)];
+		signature_append(sig, vsig);
 	}
-	return offset;
 }
 
-static int mk_signature_dict(value ksig, value vsig, char *s, int left)
+static void mk_signature_dict(value ksig, value vsig, struct stub_dbus_sig *sig)
 {
-	int offset = 0;
-
-	s[offset++] = '{';
-	offset += mk_signature_sig(ksig, s + offset, left - offset);
-	offset += mk_signature_sig(vsig, s + offset, left - offset);
-	s[offset++] = '}';
+	signature_append(sig, '{');
+	mk_signature_sig(ksig, sig);
+	mk_signature_sig(vsig, sig);
+	signature_append(sig, '}');
 
 	DEBUG_SIG("dict: %s (offset=%d)\n", s, offset);
-	return offset;
 }
 
-static int mk_signature_array(value ty, char *s, int left)
+static void mk_signature_array(value ty, struct stub_dbus_sig *sig)
 {
-	int offset = 0;
 	int array_c_type;
 
-	s[offset++] = DBUS_TYPE_ARRAY;
+	signature_append(sig, DBUS_TYPE_ARRAY);
 	array_c_type = __type_array_table[Tag_val(ty)];
 	if (IS_BASIC(array_c_type) || array_c_type == DBUS_TYPE_VARIANT) {
-		s[offset++] = array_c_type;
+		signature_append(sig, array_c_type);
 	} else if (array_c_type == DBUS_TYPE_DICT_ENTRY) {
 		value sigtuple = Field(ty, 0);
-		offset += mk_signature_dict(Field(sigtuple, 0), Field(sigtuple, 1), s + offset, left - offset);
+		mk_signature_dict(Field(sigtuple, 0), Field(sigtuple, 1), sig);
 	} else if (array_c_type == DBUS_TYPE_STRUCT) {
-		offset += mk_signature_structs(ty, s + offset, left - offset);
+		mk_signature_structs(ty, sig);
 	} else if (array_c_type == DBUS_TYPE_ARRAY) {
-		offset += mk_signature_arrays(Field(ty, 0), s + offset, left - offset);
+		mk_signature_arrays(Field(ty, 0), sig);
 	} else {
 		raise_dbus_type_not_supported("signature of array of unknown types");
 	}
 	DEBUG_SIG("array: %s (offset=%d)\n", s, offset);
-	return offset;
 }
 
-static int mk_signature_struct(value list, char *s, int left)
+static void mk_signature_struct(value list, struct stub_dbus_sig *sig)
 {
-	int offset = 0;
 	value v;
 
-	s[offset++] = '(';
+	signature_append(sig, '(');
 	for iterate_caml_list(list, list) {
 		int c_type;
 
 		v = Field(list, 0);
 		c_type = __type_table[Tag_val(v)];
 		if (IS_BASIC(c_type)) {
-			s[offset++] = c_type;
+			signature_append(sig, c_type);
 		} else {
-			s[offset++] = '#';
+			signature_append(sig, '#');
 		}
 	}
-	s[offset++] = ')';
+	signature_append(sig, ')');
 	DEBUG_SIG("struct: %s (offset=%d)\n", s, offset);
-	return offset;
 }
 
-static int mk_signature_structs(value vstructs, char *s, int left)
+static void mk_signature_structs(value vstructs, struct stub_dbus_sig *sig)
 {
-	int offset = 0;
 	value list = Field(vstructs, 0); /* Structs signature */
 
-	s[offset++] = '(';
+	signature_append(sig, '(');
 	for iterate_caml_list(list, list) {
-		int sigty;
-		value x = Field(list, 0);
-		if (Is_block(x)) {
-			raise_dbus_type_not_supported("signature of container");
-		} else {
-			sigty = __type_sig_table[Int_val(x)];
-			s[offset++] = sigty;
-		}
+		mk_signature_sig(Field(list, 0), sig);
 	}
-	s[offset++] = ')';
+	signature_append(sig, ')');
 	DEBUG_SIG("structs: %s (offset=%d)\n", s, offset);
-	return offset;
 }
 
-static int mk_signature_arrays(value arraysig, char *s, int left)
+static void mk_signature_arrays(value arraysig, struct stub_dbus_sig *sig)
 {
-	int offset = 0;
-
-	s[offset++] = 'a';
-	offset += mk_signature_sig(arraysig, s + offset, left - offset);
+	signature_append(sig, 'a');
+	mk_signature_sig(arraysig, sig);
 	DEBUG_SIG("arrays: %s (offset=%d)\n", s, offset);
-	return offset;
 }
 
-static int mk_signature_variant(value ty, char *s, int left)
+static void mk_signature_variant(value ty, struct stub_dbus_sig *sig)
 {
-	int offset = 0;
 	int c_sub_type;
 
 	c_sub_type = __type_table[Tag_val(ty)];
 	DEBUG_APPEND("variant: %c (%d)\n", c_sub_type, c_sub_type);
 
 	if (IS_BASIC(c_sub_type)) {
-		s[offset++] = c_sub_type;
+		signature_append(sig, c_sub_type);
 	} else if (c_sub_type == DBUS_TYPE_ARRAY) {
-		offset += mk_signature_array(Field(ty, 0), s + offset, left - offset);
+		mk_signature_array(Field(ty, 0), sig);
 	} else if (c_sub_type == DBUS_TYPE_STRUCT) {
-		offset += mk_signature_struct(Field(ty, 0), s + offset, left - offset);
+		mk_signature_struct(Field(ty, 0), sig);
 	} else {
 		/* FIXME once we know howto generate complex signature out of dbus.ty this can be removed */
 		raise_dbus_type_not_supported("container type in variant");
 	}
 	DEBUG_SIG("variant: %s (offset=%d)\n", s, offset);
-	return offset;
 }
 
 /* forward declaration since we use them recursively in array, struct .. */
@@ -1258,31 +1272,36 @@ static value message_append_array(DBusMessageIter *iter, value array)
 	CAMLlocal1(tmp);
 	DBusMessageIter sub;
 	int array_c_type;
-	char signature[256];
-	memset(signature, 0, sizeof(signature));
+	struct stub_dbus_sig sig;
+
+	signature_init(&sig);
 
 	array_c_type = __type_array_table[Tag_val(array)];
 	DEBUG_APPEND("array: %c (%d)\n", array_c_type, array_c_type);
 	if (IS_BASIC(array_c_type)) {
-		signature[0] = (char) array_c_type;
+		signature_append(&sig, array_c_type);
 
-		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
+		CHECK_SIG_ERROR(&sig);
+		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature_data(&sig), &sub);
 		for iterate_caml_list(Field(array, 0), tmp) {
 			message_append_basic(&sub, array_c_type, Field(tmp, 0));
 		}
 		dbus_message_iter_close_container(iter, &sub);
 	} else if (array_c_type == DBUS_TYPE_STRUCT) {
 		/* ocaml representation: Structs of ty_sig list * (ty list list) */
-		mk_signature_structs(array, signature, 256);
+		mk_signature_structs(array, &sig);
 
-		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
+		CHECK_SIG_ERROR(&sig);
+		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature_data(&sig), &sub);
 		for iterate_caml_list(Field(array, 1), tmp) {
 			message_append_struct(&sub, Field(tmp, 0));
 		}
 		dbus_message_iter_close_container(iter, &sub);
 	} else if (array_c_type == DBUS_TYPE_VARIANT) {
-		signature[0] = 'v';
-		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
+		signature_append(&sig, 'v');
+
+		CHECK_SIG_ERROR(&sig);
+		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature_data(&sig), &sub);
 		for iterate_caml_list(Field(array, 0), tmp) {
 			message_append_variant(&sub, Field(tmp, 0));
 		}
@@ -1293,9 +1312,10 @@ static value message_append_array(DBusMessageIter *iter, value array)
 
 		if (Is_block(Field(sigtuple, 0)))
 			raise_dbus_type_not_supported("dict entry key cannot be a container type");
-		mk_signature_dict(Field(sigtuple, 0), Field(sigtuple, 1), signature, 256);
+		mk_signature_dict(Field(sigtuple, 0), Field(sigtuple, 1), &sig);
 
-		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
+		CHECK_SIG_ERROR(&sig);
+		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature_data(&sig), &sub);
 		for iterate_caml_list(Field(array, 1), tmp) {
 			DBusMessageIter subitem;
 			value tuple = Field(tmp, 0);
@@ -1310,9 +1330,10 @@ static value message_append_array(DBusMessageIter *iter, value array)
 		/* ocaml representation: Arrays of ty_sig * ty_array list */
 		int sigty;
 
-		mk_signature_arrays(Field(array, 0), signature, 256);
+		mk_signature_arrays(Field(array, 0), &sig);
 
-		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
+		CHECK_SIG_ERROR(&sig);
+		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature_data(&sig), &sub);
 		for iterate_caml_list(Field(array, 1), tmp) {
 			message_append_array(&sub, Field(tmp, 0));
 		}
@@ -1326,13 +1347,14 @@ static value message_append_variant(DBusMessageIter *iter, value v)
 {
 	CAMLparam1(v);
 	DBusMessageIter sub;
-	char signature[256];
+	struct stub_dbus_sig sig;
 
-	memset(signature, 0, sizeof(signature));
+	signature_init(&sig);
 
-	mk_signature_variant(v, signature, 256);
+	mk_signature_variant(v, &sig);
 
-	dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, signature, &sub);
+	CHECK_SIG_ERROR(&sig);
+	dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, signature_data(&sig), &sub);
 	message_append_one(&sub, v);
 	dbus_message_iter_close_container(iter, &sub);
 
