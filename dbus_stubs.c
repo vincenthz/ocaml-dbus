@@ -1524,7 +1524,7 @@ value stub_dbus_watch_handle(value watch, value flags)
 	unsigned int c_flags;
 
 	for (c_flags = 0; flags != Val_emptylist; flags = Field(flags, 1)) {
-		switch (Field(flags, 0)) {
+		switch (Int_val(Field(flags, 0))) {
 		case 0: c_flags |= DBUS_WATCH_READABLE; break;
 		case 1: c_flags |= DBUS_WATCH_WRITABLE; break;
 		default: /* ouphfm */ break;
