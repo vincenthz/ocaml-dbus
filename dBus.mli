@@ -16,10 +16,26 @@
 
 exception Error of string * string
 
-type error
 type bus
 type message
 type pending_call
+
+type ty_sig =
+	| SigByte
+	| SigBool
+	| SigInt16
+	| SigUInt16
+	| SigInt32
+	| SigUInt32
+	| SigInt64
+	| SigUInt64
+	| SigDouble
+	| SigString
+	| SigObjectPath
+	| SigVariant
+	| SigArray of ty_sig
+	| SigStruct of ty_sig list
+	| SigDict of ty_sig * ty_sig
 
 type ty_array =
 	| Unknowns
@@ -34,8 +50,10 @@ type ty_array =
 	| Doubles of float list
 	| Strings of string list
 	| ObjectPaths of string list
-
-type ty =
+	| Structs of ty_sig list * (ty list list)
+	| Variants of ty list
+	| Dicts of (ty_sig * ty_sig) * ((ty * ty) list)
+and ty =
 	| Unknown
 	| Byte of char
 	| Bool of bool

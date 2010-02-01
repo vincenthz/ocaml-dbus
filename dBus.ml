@@ -16,7 +16,6 @@
 
 exception Error of string * string
 
-type error
 type bus
 type message
 type pending_call
@@ -26,6 +25,23 @@ type add_watch_fn = watch -> bool
 type rm_watch_fn = watch -> unit
 type toggle_watch_fn = watch -> unit
 type watch_fns = add_watch_fn * rm_watch_fn * (toggle_watch_fn option)
+
+type ty_sig =
+	| SigByte
+	| SigBool
+	| SigInt16
+	| SigUInt16
+	| SigInt32
+	| SigUInt32
+	| SigInt64
+	| SigUInt64
+	| SigDouble
+	| SigString
+	| SigObjectPath
+	| SigVariant
+	| SigArray of ty_sig
+	| SigStruct of ty_sig list
+	| SigDict of ty_sig * ty_sig
 
 type ty_array =
 	| Unknowns
@@ -40,8 +56,10 @@ type ty_array =
 	| Doubles of float list
 	| Strings of string list
 	| ObjectPaths of string list
-
-type ty =
+	| Structs of ty_sig list * (ty list list)
+	| Variants of ty list
+	| Dicts of (ty_sig * ty_sig) * ((ty * ty) list)
+and ty =
 	| Unknown
 	| Byte of char
 	| Bool of bool
@@ -58,7 +76,7 @@ type ty =
 	| Struct of ty list
 	| Variant of ty
 
-let string_of_ty_array ty =
+let rec string_of_ty_array ty =
 	match ty with
 	| Unknowns -> []
 	| Bytes cs -> List.map (fun x -> Printf.sprintf "%C" x) cs
@@ -72,8 +90,10 @@ let string_of_ty_array ty =
 	| Doubles fs -> List.map (fun x -> Printf.sprintf "%g" x) fs
 	| Strings ss -> List.map (fun x -> Printf.sprintf "%S" x) ss
 	| ObjectPaths ss -> List.map (fun x -> Printf.sprintf "%S" x) ss
-
-let rec string_of_ty ty =
+	| Structs (ssig, ss) -> []
+	| Variants (vs) -> List.map string_of_ty vs
+	| Dicts ((ksig, vsig), ds) -> List.map (fun (k, v) -> Printf.sprintf "%s: %s" (string_of_ty k) (string_of_ty v)) ds
+and string_of_ty ty =
 	match ty with
 	| Unknown      -> "Unknown"
 	| Byte c       -> Printf.sprintf "Byte(%C)" c

@@ -78,12 +78,10 @@ test: dBus.cmxa test.ml
 	$(OCAMLOPT) -o $@ -cclib -L. unix.cmxa $+
 
 .PHONY: example
-example: example_avahi example_nm
-
-example_avahi: dBus.cmxa example_avahi.ml
+example: dBus.cmxa example.ml
 	$(OCAMLOPT) -o $@ -cclib -L. $+
 
-example_nm: dBus.cmxa example_nm.ml
+example_avahi: dBus.cmxa example_avahi.ml
 	$(OCAMLOPT) -o $@ -cclib -L. $+
 
 clean:
