@@ -19,6 +19,7 @@ type message
 type pending_call
 
 type ty =
+	| Unknown
 	| Byte of char
 	| Bool of bool
 	| Int16 of int
@@ -29,6 +30,22 @@ type ty =
 	| UInt64 of int64
 	| Double of float
 	| String of string
+	| ObjectPath of string
+
+let string_of_ty ty =
+	match ty with
+	| Unknown      -> "Unknown"
+	| Byte c       -> Printf.sprintf "Byte(%C)" c
+	| Bool b       -> Printf.sprintf "Bool(%b)" b
+	| Int16 i      -> Printf.sprintf "Int16(%d)" i
+	| UInt16 i     -> Printf.sprintf "UInt16(%d)" i
+	| Int32 i      -> Printf.sprintf "Int32(%ld)" i
+	| UInt32 i     -> Printf.sprintf "UInt32(%ld)" i
+	| Int64 i      -> Printf.sprintf "Int64(%Ld)" i
+	| UInt64 i     -> Printf.sprintf "UInt64(%Ld)" i
+	| Double d     -> Printf.sprintf "Double(%g)" d
+	| String s     -> Printf.sprintf "String(%S)" s
+	| ObjectPath s -> Printf.sprintf "ObjectPath(%S)" s
 
 (******************* ERROR *********************)
 module Error = struct

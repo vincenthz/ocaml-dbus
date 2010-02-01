@@ -44,6 +44,7 @@ static int __type_table[] = {
 	DBUS_TYPE_INT32, DBUS_TYPE_UINT32,
 	DBUS_TYPE_INT64, DBUS_TYPE_UINT64,
 	DBUS_TYPE_DOUBLE, DBUS_TYPE_STRING,
+	DBUS_TYPE_OBJECT_PATH,
 	-1
 };
 
@@ -76,6 +77,12 @@ void finalize_dbus_error(value v)
 void finalize_dbus_connection(value v)
 {
 	dbus_connection_close(DBusConnection_val(v));
+	dbus_connection_unref(DBusConnection_val(v));
+}
+
+void finalize_dbus_connection_unref(value v)
+{
+	dbus_connection_unref(DBusConnection_val(v));
 }
 
 void finalize_dbus_message(value v)
@@ -133,7 +140,7 @@ value stub_dbus_bus_get(value type, value error)
 	if (!c_con)
 		failwith("dbus_bus_get");
 
-	voidstar_alloc(con, c_con, finalize_dbus_connection);
+	voidstar_alloc(con, c_con, finalize_dbus_connection_unref);
 	CAMLreturn(con);
 }
 
@@ -291,7 +298,9 @@ DBusHandlerResult add_filter_callback(DBusConnection *connection,
 	CAMLlocal2(conn, msg);
 	int ret;
 
-	voidstar_alloc(conn, connection, finalize_dbus_connection);
+	dbus_connection_ref(connection);
+	voidstar_alloc(conn, connection, finalize_dbus_connection_unref);
+	dbus_message_ref(message);
 	voidstar_alloc(msg, message, finalize_dbus_message);
 	ret = Bool_val(caml_callback2(*((value *) userdata),
 	                              conn, msg));
@@ -622,6 +631,7 @@ value stub_dbus_message_append(value message, value list)
 			dbus_message_iter_append_basic(&iter, c_type, &d);
 			break;
 			}
+		case DBUS_TYPE_OBJECT_PATH:
 		case DBUS_TYPE_STRING: {
 			char *s = strdup(String_val(v));
 			dbus_message_iter_append_basic(&iter, c_type, &s);
@@ -698,6 +708,7 @@ value stub_dbus_message_get(value message)
 			Field(r, 0) = v;
 			break;
 			}
+		case DBUS_TYPE_OBJECT_PATH:
 		case DBUS_TYPE_STRING: {
 			char *s;
 			dbus_message_iter_get_basic(&args, &s);
@@ -716,7 +727,7 @@ value stub_dbus_message_get(value message)
 			}
 		default:
 			caml_failwith("unexpected type in message");
-			v = Val_unit;
+			r = Val_int(0);
 			break;
 		}
 

@@ -18,6 +18,7 @@ type bus
 type message
 type pending_call
 type ty =
+	| Unknown
 	| Byte of char
 	| Bool of bool
 	| Int16 of int
@@ -28,6 +29,9 @@ type ty =
 	| UInt64 of int64
 	| Double of float
 	| String of string
+	| ObjectPath of string
+
+val string_of_ty : ty -> string
 
 module Error :
 sig
