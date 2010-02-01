@@ -90,7 +90,7 @@ let rec string_of_ty_array ty =
 	| Doubles fs -> List.map (fun x -> Printf.sprintf "%g" x) fs
 	| Strings ss -> List.map (fun x -> Printf.sprintf "%S" x) ss
 	| ObjectPaths ss -> List.map (fun x -> Printf.sprintf "%S" x) ss
-	| Structs (ssig, ss) -> []
+	| Structs (ssig, ss) -> List.map (fun x -> string_of_ty (Struct x)) ss
 	| Variants (vs) -> List.map string_of_ty vs
 	| Dicts ((ksig, vsig), ds) -> List.map (fun (k, v) -> Printf.sprintf "%s: %s" (string_of_ty k) (string_of_ty v)) ds
 and string_of_ty ty =
@@ -174,6 +174,8 @@ external get_rev : message -> ty list = "stub_dbus_message_get"
 
 let get message = List.rev (get_rev message)
 (** [get message] returns all parameters associated with the message *)
+
+external marshal : message -> string = "stub_dbus_message_marshal"
 
 external set_path : message -> string -> unit = "stub_dbus_message_set_path"
 external set_interface : message -> string -> unit = "stub_dbus_message_set_interface"

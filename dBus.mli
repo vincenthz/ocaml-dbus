@@ -112,6 +112,7 @@ sig
 	val append : message -> ty list -> unit
 	val get_rev : message -> ty list
 	val get : message -> ty list
+	val marshal : message -> string
 	val set_path : message -> string -> unit
 	val set_interface : message -> string -> unit
 	val set_member : message -> string -> unit

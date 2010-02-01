@@ -32,6 +32,8 @@
 	do { val = Val_int(tag); } while (0)
 #define caml_alloc_variant_param(val, tag, p) \
 	do { val = caml_alloc_small(1, tag); Field(val, 0) = (p); } while (0)
+#define caml_alloc_variant_param2(val, tag, p1, p2) \
+	do { val = caml_alloc_small(2, tag); Field(val, 0) = (p1); Field(val, 1) = (p2); } while (0)
 #define caml_alloc_some(val, param) \
 	caml_alloc_variant_param(val, 0, param)
 #define caml_append_list(list, tmp, e)			\
@@ -911,7 +913,7 @@ static value message_append_array(DBusMessageIter *iter, value array)
 		signature[0] = 'v';
 		dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, signature, &sub);
 		for iterate_caml_list(Field(array, 0), tmp) {
-			message_append_variant(&sub, Field(array, 0));
+			message_append_variant(&sub, Field(tmp, 0));
 		}
 		dbus_message_iter_close_container(iter, &sub);
 	} else if (array_c_type == DBUS_TYPE_DICT_ENTRY) {
@@ -1030,9 +1032,10 @@ value stub_dbus_message_append(value message, value list)
 	CAMLreturn(Val_unit);
 }
 
-static value dbus_ty_list_from_c(DBusMessageIter *iter, int initial_has_next, int alloc_variant);
+static value message_get_one(DBusMessageIter *iter, int *subtype);
+static value message_get_list(DBusMessageIter *iter, int initial_has_next, int alloc_variant);
 
-static value message_basic_type_to_caml(DBusMessageIter *iter, int c_type)
+static value message_get_basic(DBusMessageIter *iter, int c_type)
 {
 	CAMLparam0();
 	CAMLlocal1(v);
@@ -1090,71 +1093,125 @@ static value message_basic_type_to_caml(DBusMessageIter *iter, int c_type)
 	CAMLreturn(v);
 }
 
-static value dbus_array_to_caml(DBusMessageIter *iter, int array_c_type, int initial_has_next)
+static value message_get_array_struct(DBusMessageIter *iter)
 {
 	CAMLparam0();
-	CAMLlocal2(r, v);
+	CAMLlocal4(tmp, list, v, r);
+	int has_next;
+
+	list = tmp = Val_emptylist;
+	has_next = 1;
+	while (has_next) {
+		DBusMessageIter sub;
+
+		dbus_message_iter_recurse(iter, &sub);
+		v = message_get_list(&sub, 1, 1);
+		caml_append_list(list, tmp, v);
+
+		has_next = dbus_message_iter_next(iter);
+	}
+	CAMLreturn(list);
+}
+
+static value message_get_array_dict(DBusMessageIter *iter)
+{
+	CAMLparam0();
+	CAMLlocal5(tmp, list, v, r, tuple);
+	int has_next;
+
+	list = tmp = Val_emptylist;
+	has_next = 1; /* FIXME */
+	while (has_next) {
+		DBusMessageIter sub;
+		int subtype;
+
+		/* alloc empty tuple */
+		tuple = caml_alloc_tuple(2);
+		Field(tuple, 0) = Val_unit;
+		Field(tuple, 1) = Val_unit;
+
+		dbus_message_iter_recurse(iter, &sub);
+
+		v = message_get_one(&sub, &subtype);
+		caml_alloc_variant_param(r, subtype, v);
+		Store_field(tuple, 0, r);
+
+		v = message_get_one(&sub, &subtype);
+		caml_alloc_variant_param(r, subtype, v);
+		Store_field(tuple, 1, r);
+
+		caml_append_list(list, tmp, tuple);
+
+		has_next = dbus_message_iter_next(iter);
+	}
+	CAMLreturn(list);
+}
+
+
+/* iter is on the values of the array */
+static value message_get_array(DBusMessageIter *iter, int array_c_type, int initial_has_next)
+{
+	CAMLparam0();
+	CAMLlocal2(v, r);
 	int type;
 
 	type = find_index_equal(array_c_type, __type_array_table);
-	/* check if we know the type */
-	if (type == -1)
-		caml_alloc_variant(r, 0);
-	else {
-		if (IS_BASIC(array_c_type)) {
-			/* basic are all in the form : BASIC of list */
-			v = dbus_ty_list_from_c(iter, 1, 0);
-			caml_alloc_variant_param(r, type, v);
-		} else if (array_c_type == DBUS_TYPE_DICT_ENTRY) {
-			value sig, listv;
-			DBusMessageIter sub;
-			int offset = 0;
+	if (IS_BASIC(array_c_type)) {
+		/* basic are all in the form : BASIC of list */
+		v = message_get_list(iter, 1, 0);
+		caml_alloc_variant_param(r, type, v);
+	} else if (array_c_type == DBUS_TYPE_DICT_ENTRY) {
+		#if 0
+		/* create the signature */
+		dbus_message_iter_recurse(iter, &sub);
+		do {
+			int c_type, type;
 
-			listv = Val_emptylist;
-			sig = caml_alloc_tuple(2);
-			dbus_message_iter_recurse(iter, &sub);
-			do {
-				int c_type, type;
+			c_type = dbus_message_iter_get_arg_type(&sub);
+			if (IS_BASIC(c_type) || c_type == DBUS_TYPE_VARIANT)
+				type = find_index_equal(c_type, __type_sig_table);
+			else
+				caml_failwith("dict entry are container ?");
+			if (offset > 1)
+				continue;
+			Field(sig, offset) = Val_int(type);
+			offset++;
+		} while (dbus_message_iter_next(&sub));
+		#endif
+		v = message_get_array_dict(iter);
+		caml_alloc_variant_param2(r, type, Val_unit, v);
 
-				c_type = dbus_message_iter_get_arg_type(&sub);
-				if (IS_BASIC(c_type) || c_type == DBUS_TYPE_VARIANT)
-					type = find_index_equal(c_type, __type_sig_table);
-				else
-					caml_failwith("dict entry are container ?");
-				if (offset > 1)
-					continue;
-				Field(sig, offset) = Val_int(type);
-				offset++;
-			} while (dbus_message_iter_next(&sub));
-
-			v = caml_alloc_tuple(2);
-			Field(v, 0) = sig;
-			Field(v, 1) = listv;
-
-			caml_alloc_variant_param(r, type, v);
-			caml_failwith("array of dict entry not supported");
-		} else if (array_c_type == DBUS_TYPE_VARIANT) {
-			caml_failwith("array of variant not supported");
-		} else
-			caml_failwith("array of container not supported");
+		/* signature */
+		v = caml_alloc_tuple(2);
+		Field(v, 0) = Val_int(0); /* FIXME */
+		Field(v, 1) = Val_int(0); /* FIXME */
+		Store_field(r, 0, v);
+	} else if (array_c_type == DBUS_TYPE_VARIANT) {
+		v = message_get_list(iter, 1, 1);
+		caml_alloc_variant_param(r, type, v);
+	} else if (array_c_type == DBUS_TYPE_STRUCT) {
+		v = message_get_array_struct(iter);
+		caml_alloc_variant_param2(r, type, Val_emptylist, v); /* Structs of ([], v) */
+	} else {
+		caml_alloc_variant(r, 0); /* r = Dbus.Ty(Unknown) */
 	}
 
 	CAMLreturn(r);
 }
 
-static value dbus_struct_to_caml(DBusMessageIter *iter, int initial_has_next)
+static value message_get_struct(DBusMessageIter *iter, int initial_has_next)
 {
 	CAMLparam0();
 	value v;
 
-	v = dbus_ty_list_from_c(iter, 1, 1);
+	v = message_get_list(iter, 1, 1);
 	CAMLreturn(v);
 }
 
 /** dbus_ty_one_from_c returns one value beeing the raw representation of
  *  the type. meaning it's not tagged for use as an ocaml variant type.
  */
-static value dbus_ty_one_from_c(DBusMessageIter *iter, int *subtype)
+static value message_get_one(DBusMessageIter *iter, int *subtype)
 {
 	CAMLparam0();
 	CAMLlocal1(v);
@@ -1162,26 +1219,27 @@ static value dbus_ty_one_from_c(DBusMessageIter *iter, int *subtype)
 
 	c_type = dbus_message_iter_get_arg_type(iter);
 	type = find_index_equal(c_type, __type_table);
+	v = Val_unit;
 
 	if (IS_BASIC(c_type)) {
-		v = message_basic_type_to_caml(iter, c_type);
+		v = message_get_basic(iter, c_type);
 	} else if (c_type == DBUS_TYPE_ARRAY) {
 		DBusMessageIter sub;
-		dbus_message_iter_recurse(iter, &sub);
 
-		v = dbus_array_to_caml(&sub, dbus_message_iter_get_element_type(iter), 1);
+		dbus_message_iter_recurse(iter, &sub);
+		v = message_get_array(&sub, dbus_message_iter_get_element_type(iter), 1);
 	} else if (c_type == DBUS_TYPE_STRUCT) {
 		DBusMessageIter sub;
-		dbus_message_iter_recurse(iter, &sub);
 
-		v = dbus_struct_to_caml(&sub, 1);
+		dbus_message_iter_recurse(iter, &sub);
+		v = message_get_struct(&sub, 1);
 	} else if (c_type == DBUS_TYPE_VARIANT) {
 		DBusMessageIter sub;
 		int subtype;
 		value r;
 
 		dbus_message_iter_recurse(iter, &sub);
-		v = dbus_ty_one_from_c(&sub, &subtype);
+		v = message_get_one(&sub, &subtype);
 		caml_alloc_variant_param(r, subtype, v);
 		v = r;
 	} else {
@@ -1195,9 +1253,9 @@ static value dbus_ty_one_from_c(DBusMessageIter *iter, int *subtype)
 
 /** dbus_ty_list_from_c returns a caml list of value.
  * if alloc_variant is true, then we allocated the ocaml variant-type tag. List of Dbus.ty
- * otherwise, we allocated a raw list of values. List of string, List of int, etc
+ * otherwise, we allocate a raw list of values. List of string, List of int, etc
  */
-static value dbus_ty_list_from_c(DBusMessageIter *iter, int initial_has_next, int alloc_variant)
+static value message_get_list(DBusMessageIter *iter, int initial_has_next, int alloc_variant)
 {
 	CAMLparam0();
 	CAMLlocal4(tmp, list, v, r);
@@ -1212,7 +1270,7 @@ static value dbus_ty_list_from_c(DBusMessageIter *iter, int initial_has_next, in
 	while (has_next) {
 		int subtype;
 
-		v = dbus_ty_one_from_c(iter, &subtype);
+		v = message_get_one(iter, &subtype);
 		if (alloc_variant) {
 			caml_alloc_variant_param(r, subtype, v);
 		}
@@ -1233,7 +1291,7 @@ value stub_dbus_message_get(value message)
 
 	c_msg = DBusMessage_val(message);
 	has_next = dbus_message_iter_init(c_msg, &args);
-	v = dbus_ty_list_from_c(&args, has_next, 1);
+	v = message_get_list(&args, has_next, 1);
 
 	CAMLreturn(v);
 }
@@ -1270,6 +1328,21 @@ value stub_dbus_message_is_error(value message, value error_name)
 	ret = dbus_message_is_error(DBusMessage_val(message),
 	                            String_val(error_name));
 	CAMLreturn(Val_bool(ret));
+}
+
+value stub_dbus_message_marshal(value message)
+{
+	CAMLparam1(message);
+	CAMLlocal1(msgstr);
+	char *c_msgstr;
+	int c_msglen;
+
+	if (!dbus_message_marshal(DBusMessage_val(message), &c_msgstr, &c_msglen))
+		caml_raise_out_of_memory();
+	msgstr = caml_alloc_string(c_msglen);
+	memcpy(String_val(msgstr), c_msgstr, c_msglen);
+
+	CAMLreturn(msgstr);
 }
 
 /**************** PENDING CALL ******************/

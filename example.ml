@@ -89,6 +89,7 @@ let test () =
 			]))
 	] in
 	DBus.Message.append msg params;
+	print_dbus_ty_list (DBus.Message.get msg);
 	()
 
 (*****************************************************************************)
