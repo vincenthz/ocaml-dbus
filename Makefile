@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -fPIC -O2 `pkg-config --cflags dbus-1`
+CFLAGS = -Wall -fPIC -O2 `pkg-config --cflags dbus-1` -I$(OCAMLLIBDIR)
 OCAMLC = ocamlc
 OCAMLOPT = ocamlopt
 
@@ -28,10 +28,10 @@ bins: $(PROGRAMS)
 libs: $(LIBS)
 
 dBus.cmxa: libdbus_stubs.a dbus_stubs.a dBus.cmx
-	$(OCAMLOPT) $(OCAMLOPTFLAGS) -a -cclib -ldbus-1 -cclib -ldbus_stubs -o $@ dBus.cmx
+	$(OCAMLOPT) $(OCAMLOPTFLAGS) -a -cclib -ldbus_stubs -cclib -ldbus-1 -o $@ dBus.cmx
 
 dBus.cma: libdbus_stubs.a dBus.cmi dBus.cmo
-	$(OCAMLC) -a -dllib dlldbus_stubs.so -cclib -ldbus-1 -cclib -ldbus_stubs -o $@ -custom dBus.cmo
+	$(OCAMLC) -a -dllib dlldbus_stubs.so -cclib -ldbus_stubs -cclib -ldbus-1 -o $@ -custom dBus.cmo
 
 dbus_stubs.a: dbus_stubs.o
 	ocamlmklib -o dbus_stubs $+
