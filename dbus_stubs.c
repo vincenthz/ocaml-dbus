@@ -64,6 +64,18 @@
 #define iterate_caml_list(list, tmp)			\
 	(tmp = (list); tmp != Val_emptylist; tmp = Field(tmp, 1))
 
+static value caml_list_rev(value list)
+{
+	CAMLparam1(list);
+	CAMLlocal3(tmp, tmprev, listrev);
+	listrev = tmp = Val_emptylist;
+
+	for iterate_caml_list(list, tmp) {
+		caml_append_list(listrev, tmprev, Field(tmp, 0));
+	}
+	CAMLreturn(listrev);
+}
+
 #define SIZEOF_FINALPTR		(2 * sizeof (void *))
 
 static int __messagetype_table[] = {
@@ -245,6 +257,24 @@ static void raise_dbus_error(DBusError *error)
 	caml_raise_with_args(*dbus_err, 2, args);
 }
 
+static void raise_dbus_internal_error(char *s)
+{
+	static value *dbus_err = NULL;
+
+	if (!dbus_err)
+		dbus_err = caml_named_value("dbus.internal_error");
+	caml_raise_with_string(*dbus_err, s);
+}
+
+static void raise_dbus_type_not_supported(char *s)
+{
+	static value *dbus_err = NULL;
+
+	if (!dbus_err)
+		dbus_err = caml_named_value("dbus.type_not_supported");
+	caml_raise_with_string(*dbus_err, s);
+}
+
 /******************** BUS **********************/
 value stub_dbus_bus_get(value type)
 {
@@ -406,7 +436,7 @@ value stub_dbus_connection_send_with_reply(value bus, value message,
 	                                      &c_pending, Int_val(timeout));
 	if (!ret) {
 		free(c_pending);
-		caml_failwith("dbus_connection_send_with_reply");
+		raise_dbus_internal_error("dbus_connection_send_with_reply");
 	}
 
 	voidstar_alloc(pending, c_pending, finalize_dbus_pending_call);
@@ -532,7 +562,7 @@ value stub_dbus_connection_get_fd(value bus)
 
 	ret = dbus_connection_get_unix_fd(DBusConnection_val(bus), &fd);
 	if (ret == 0)
-		caml_failwith("dbus_connection_get_fd");
+		raise_dbus_internal_error("dbus_connection_get_fd");
 	CAMLreturn(Val_int(fd));
 }
 
@@ -748,7 +778,7 @@ value stub_dbus_message_create(value message_type)
 	c_message_type = __messagetype_table[Int_val(message_type)];
 	c_msg = dbus_message_new(c_message_type);
 	if (!c_msg)
-		caml_failwith("message_create");
+		raise_dbus_internal_error("message_create");
 	voidstar_alloc(msg, c_msg, finalize_dbus_message);
 	CAMLreturn(msg);
 }
@@ -765,7 +795,7 @@ value stub_dbus_message_new_method_call(value destination, value path,
 	                                     String_val(interface),
 	                                     String_val(method));
 	if (!c_msg)
-		caml_failwith("message_new_method_call");
+		raise_dbus_internal_error("message_new_method_call");
 	voidstar_alloc(msg, c_msg, finalize_dbus_message);
 	CAMLreturn(msg);
 }
@@ -778,7 +808,7 @@ value stub_dbus_message_new_method_return(value message)
 
 	c_new_message = dbus_message_new_method_return(DBusMessage_val(message));
 	if (!c_new_message)
-		caml_failwith("message_new_method_call");
+		raise_dbus_internal_error("message_new_method_call");
 	voidstar_alloc(new_message, c_new_message, finalize_dbus_message);
 	CAMLreturn(new_message);
 }
@@ -792,7 +822,7 @@ value stub_dbus_message_new_signal(value path, value interface, value method)
 	c_msg = dbus_message_new_signal(String_val(path), String_val(interface),
 	                                String_val(method));
 	if (!c_msg)
-		caml_failwith("message_new_signal");
+		raise_dbus_internal_error("message_new_signal");
 
 	voidstar_alloc(msg, c_msg, finalize_dbus_message);
 	CAMLreturn(msg);
@@ -811,7 +841,7 @@ value stub_dbus_message_new_error(value reply_to, value error_name,
 	                               errname,
 	                               String_val(error_message));
 	if (!c_msg)
-		caml_failwith("message_new_error");
+		raise_dbus_internal_error("message_new_error");
 	voidstar_alloc(msg, c_msg, finalize_dbus_message);
 	CAMLreturn(msg);
 }
@@ -1027,7 +1057,7 @@ static int mk_signature_of_sig(value list, char *s, int left)
 		int sigty;
 		value x = Field(list, 0);
 		if (Is_block(x)) {
-			caml_failwith("signature of container not supported yet");
+			raise_dbus_type_not_supported("signature of container");
 		} else {
 			sigty = __type_sig_table[Int_val(x)];
 			s[offset++] = sigty;
@@ -1099,9 +1129,9 @@ static value message_append_array(DBusMessageIter *iter, value array)
 		value sigtuple = Field(array, 0);
 
 		if (Is_block(Field(sigtuple, 0)))
-			caml_failwith("dictionnary entry key cannot be a container type");
+			raise_dbus_type_not_supported("dict entry key cannot be a container type");
 		if (Is_block(Field(sigtuple, 1)))
-			caml_failwith("dictionnary entry value cannot be a container type");
+			raise_dbus_type_not_supported("dict entry value cannot be a container type");
 		ksig = __type_sig_table[Int_val(Field(sigtuple, 0))];
 		vsig = __type_sig_table[Int_val(Field(sigtuple, 1))];
 
@@ -1127,7 +1157,7 @@ static value message_append_array(DBusMessageIter *iter, value array)
 
 		signature[0] = 'a';
 		if (Is_block(Field(array, 0)))
-			caml_failwith("array of array of container not supported yet");
+			raise_dbus_type_not_supported("array of array of container");
 		else
 			sigty = __type_sig_table[Int_val(Field(array, 0))];
 		signature[1] = sigty;
@@ -1138,7 +1168,7 @@ static value message_append_array(DBusMessageIter *iter, value array)
 		}
 		dbus_message_iter_close_container(iter, &sub);
 	} else
-		caml_failwith("internal error");
+		raise_dbus_internal_error("append array: unknown type");
 	CAMLreturn(Val_unit);
 }
 
@@ -1158,7 +1188,7 @@ static value message_append_variant(DBusMessageIter *iter, value v)
 		signature[0] = c_sub_type;
 	} else {
 		/* FIXME once we know howto generate complex signature out of dbus.ty this can be removed */
-		caml_failwith("append: container type not supported in variant yet");
+		raise_dbus_type_not_supported("container type in variant");
 	}
 
 	dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, signature, &sub);
@@ -1199,7 +1229,7 @@ static value message_append_one(DBusMessageIter *iter, value v)
 		message_append_variant(iter, v);
 	} else {
 		/*printf("c_type: %c (%d)\n", c_type, c_type); */
-		caml_failwith("appending fail: unknown type");
+		raise_dbus_internal_error("appending fail: unknown type");
 	}
 	CAMLreturn(Val_unit);
 }
@@ -1313,6 +1343,7 @@ static value message_get_array_struct(DBusMessageIter *iter)
 
 		has_next = dbus_message_iter_next(iter);
 	}
+	list = caml_list_rev(list);
 	CAMLreturn(list);
 }
 
@@ -1336,6 +1367,7 @@ static value message_get_array_array(DBusMessageIter *iter)
 
 		has_next = dbus_message_iter_next(iter);
 	}
+	list = caml_list_rev(list);
 	CAMLreturn(list);
 }
 
@@ -1373,6 +1405,7 @@ static value message_get_array_dict(DBusMessageIter *iter)
 
 		has_next = dbus_message_iter_next(iter);
 	}
+	list = caml_list_rev(list);
 	CAMLreturn(list);
 }
 
@@ -1515,6 +1548,7 @@ static value message_get_list(DBusMessageIter *iter, int initial_has_next, int a
 
 		has_next = dbus_message_iter_next(iter);
 	}
+	list = caml_list_rev(list);
 	CAMLreturn(list);
 }
 
@@ -1614,7 +1648,7 @@ value stub_dbus_pending_call_steal_reply(value pending)
 
 	c_message = dbus_pending_call_steal_reply(DBusPendingCall_val(pending));
 	if (!c_message)
-		caml_failwith("dbus_pending_call_steal_reply");
+		raise_dbus_internal_error("dbus_pending_call_steal_reply");
 	voidstar_alloc(message, c_message, finalize_dbus_message);
 
 	CAMLreturn(message);

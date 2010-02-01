@@ -14,6 +14,8 @@
  * Dbus binding
  *)
 
+exception Type_not_supported of string
+exception Internal_error of string
 exception Error of string * string
 
 type bus
@@ -222,9 +224,7 @@ external new_error : message -> error_name -> string -> message
 external append : message -> ty list -> unit = "stub_dbus_message_append"
 (** [append message parameters] appends dbus parameters to the message *)
 
-external get_rev : message -> ty list = "stub_dbus_message_get"
-
-let get message = List.rev (get_rev message)
+external get : message -> ty list = "stub_dbus_message_get"
 (** [get message] returns all parameters associated with the message *)
 
 external marshal : message -> string = "stub_dbus_message_marshal"
@@ -360,3 +360,5 @@ external handle : timeout -> unit = "stub_dbus_timeout_handle"
 end
 
 let _ = Callback.register_exception "dbus.error" (Error ("register_callback", "register_callback"))
+let _ = Callback.register_exception "dbus.internal_error" (Internal_error "register_callback")
+let _ = Callback.register_exception "dbus.type_not_supported" (Type_not_supported "register_callback")
