@@ -75,6 +75,7 @@ let example_notification () =
 (****************** Test Packets *********************************************)
 (*****************************************************************************)
 let test () =
+	Printf.printf "########## test 1 ########\n%!";
 	let msg = DBus.Message.new_method_call notif_name notif_path notif_interface "X" in
 	let params = [
 		DBus.String "abc";
@@ -95,6 +96,7 @@ let test () =
 	DBus.Message.append msg params;
 	print_dbus_ty_list (DBus.Message.get msg);
 
+	Printf.printf "########## test 2 ########\n%!";
 	let msg = DBus.Message.new_method_call notif_name notif_path notif_interface "X" in
 	let params = [
 		DBus.Array (DBus.Strings [ "abc" ]);
@@ -109,6 +111,19 @@ let test () =
 	] in
 	DBus.Message.append msg params;
 	print_dbus_ty_list (DBus.Message.get msg);
+
+	Printf.printf "########## test 3 ########\n%!";
+	let msg = DBus.Message.new_method_call notif_name notif_path notif_interface "X" in
+	let indictsig = (DBus.SigString, DBus.SigBool) in
+	let outdictsig = (DBus.SigString, DBus.SigDict (fst indictsig, snd indictsig)) in
+	let params = [
+		DBus.Array (DBus.Dicts (outdictsig, [
+			(DBus.String "x", DBus.Array (DBus.Dicts (indictsig, [ (DBus.String "x", DBus.Bool true) ])))
+		]));
+	] in
+	DBus.Message.append msg params;
+	print_dbus_ty_list (DBus.Message.get msg);
+
 	()
 
 (*****************************************************************************)

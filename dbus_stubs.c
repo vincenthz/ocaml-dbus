@@ -1084,7 +1084,13 @@ static int mk_signature_sig(value sig, char *s, int left)
 			}
 			s[offset++] = ')';
 		} else if (c_type == DBUS_TYPE_DICT_ENTRY) {
-			raise_dbus_type_not_supported("signature of dict");
+			value ksig = Field(sig, 0);
+			value vsig = Field(sig, 1);
+			s[offset++] = 'a';
+			s[offset++] = '{';
+			offset += mk_signature_sig(ksig, s + offset, left - offset);
+			offset += mk_signature_sig(vsig, s + offset, left - offset);
+			s[offset++] = '}';
 		}
 	} else {
 		int vsig = __type_sig_table[Int_val(sig)];

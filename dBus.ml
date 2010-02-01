@@ -262,8 +262,48 @@ external new_error : message -> error_name -> string -> message
 external _append : message -> ty list -> unit = "stub_dbus_message_append"
 
 let append message tys =
+	let raise_type_not_supported_s s = raise (Type_not_supported s) in
 	let raise_type_not_supported ty =
-		raise (Type_not_supported (Printf.sprintf "cannot append: %s" (string_of_ty ty))) in
+		raise_type_not_supported_s (Printf.sprintf "cannot append: %s" (string_of_ty ty)) in
+	let check_sig sigs ty =
+		()
+		in
+	let is_basic_sig ty =
+		match ty with
+		(* supported basic types *)
+		| SigByte _ | SigBool _ | SigInt16 _ | SigUInt16 _ | SigInt32 _
+		| SigUInt32 _ | SigInt64 _ | SigUInt64 _ | SigDouble _
+		| SigString _ | SigObjectPath _ -> true
+		| _                             -> false
+		in
+	let rec is_sig_value_matching s v =
+		match (s, v) with
+		(* normal byte *)
+		| (SigByte, (Byte _))
+		| (SigBool, (Bool _))
+		| (SigInt16, (Int16 _)) | (SigUInt16, (UInt16 _))
+		| (SigInt32, (Int32 _)) | (SigUInt32, (UInt32 _))
+		| (SigInt64, (Int64 _)) | (SigUInt64, (UInt64 _))
+		| (SigDouble, (Double _)) | (SigString, (String _))
+		| (SigObjectPath, (ObjectPath _)) -> true
+		(* array matching *)
+		| (SigArray SigByte, (Array (Bytes _)))
+		| (SigArray SigBool, (Array (Bools _)))
+		| (SigArray SigInt16, (Array (Int16s _)))
+		| (SigArray SigUInt16, (Array (UInt16s _)))
+		| (SigArray SigInt32, (Array (Int32s _)))
+		| (SigArray SigUInt32, (Array (UInt32s _)))
+		| (SigArray SigInt64, (Array (Int64s _)))
+		| (SigArray SigUInt64, (Array (UInt64s _)))
+		| (SigArray SigDouble, (Array (Doubles _)))
+		| (SigArray SigString, (Array (Strings _)))
+		| (SigArray SigObjectPath, (Array (ObjectPaths _))) -> true
+		(* other container *)
+		| (SigStruct sigs, Struct tys) -> true
+		| (SigDict (ksig, vsig), _) -> true
+		(* fallback to not matching *)
+		| _                               -> false
+		in
 	let rec check_ty ty =
 		match ty with
 		(* supported basic types *)
@@ -278,9 +318,11 @@ let append message tys =
 		(* just for getting unknown type, not supported to append *)
 		| Unknown | Array Unknowns -> raise_type_not_supported ty
 		(* ...*)
-		| Array (Structs (sigs, tys)) -> ()
+		| Array (Structs (sigs, tys)) -> List.iter (check_sig sigs) tys
 		| Array (Variants tys) -> ()
-		| Array (Dicts ((sk, sv), tys)) -> ()
+		| Array (Dicts ((sk, sv), tys)) ->
+			if not (is_basic_sig sk) then raise_type_not_supported_s "no container allowed in dict key";
+			()
 		| Array (Arrays (s, tys)) -> ()
 		| Struct tyl -> ()
 		| Variant ty -> ()
