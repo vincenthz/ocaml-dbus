@@ -19,6 +19,12 @@ exception Error of string * string
 type bus
 type message
 type pending_call
+type watch
+
+type add_watch_fn = watch -> bool
+type rm_watch_fn = watch -> unit
+type toggle_watch_fn = watch -> unit
+type watch_fns = add_watch_fn * rm_watch_fn * (toggle_watch_fn option)
 
 type ty_sig =
 	| SigByte
@@ -97,6 +103,7 @@ sig
 		| Method_return
 		| Error
 		| Signal
+	val string_of_message_ty : message_type -> string
 	val create : message_type -> message
 	val new_method_call : string -> string -> string -> string -> message
 	val new_method_return : message -> message
@@ -137,6 +144,7 @@ end
 
 module Connection :
 sig
+	type dispatch_status = Data_remains | Complete | Need_memory
 	val send : bus -> message -> int32
 	val send_with_reply : bus -> message -> int -> pending_call
 	val send_with_reply_and_block : bus -> message -> int -> message
@@ -145,7 +153,16 @@ sig
 	val read_write : bus -> int -> bool
 	val read_write_dispatch : bus -> int -> bool
 	val pop_message : bus -> message option
+	val get_dispatch_status : bus -> dispatch_status
+	val dispatch : bus -> dispatch_status
 	val get_fd : bus -> Unix.file_descr
+	val set_watch_functions : bus -> watch_fns -> unit
+	val get_max_message_size : bus -> int
+	val set_max_message_size : bus -> int -> unit
+	val get_max_received_size : bus -> int
+	val set_max_received_size : bus -> int -> unit
+	val get_outgoing_size : bus -> int
+	val set_allow_anonymous : bus -> bool -> unit
 end
 
 module PendingCall :
@@ -154,4 +171,16 @@ sig
 	val cancel : pending_call -> unit
 	val get_completed : pending_call -> bool
 	val steal_reply : pending_call -> message
+end
+
+module Watch :
+sig
+
+	type flags = Readable | Writable
+
+	val get_unix_fd : watch -> Unix.file_descr
+	val get_enabled : watch -> bool
+	val get_flags : watch -> flags list
+	val handle : watch -> flags list -> unit
+
 end

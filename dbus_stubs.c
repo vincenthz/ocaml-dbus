@@ -16,6 +16,9 @@
 
 #include <string.h>
 #include <dbus/dbus.h>
+
+#define CAML_NAME_SPACE
+
 #include <caml/mlvalues.h>
 #include <caml/memory.h>
 #include <caml/alloc.h>
@@ -49,6 +52,13 @@ static int __messagetype_table[] = {
 	DBUS_MESSAGE_TYPE_METHOD_RETURN,
 	DBUS_MESSAGE_TYPE_ERROR,
 	DBUS_MESSAGE_TYPE_SIGNAL,
+	-1
+};
+
+static int __dispatch_status_table[] = {
+	DBUS_DISPATCH_DATA_REMAINS,
+	DBUS_DISPATCH_COMPLETE,
+	DBUS_DISPATCH_NEED_MEMORY,
 	-1
 };
 
@@ -397,7 +407,9 @@ value stub_dbus_connection_read_write(value bus, value timeout)
 {
 	CAMLparam2(bus, timeout);
 	dbus_bool_t b;
+	caml_enter_blocking_section();
 	b = dbus_connection_read_write(DBusConnection_val(bus), Int_val(timeout));
+	caml_leave_blocking_section();
 	CAMLreturn(Val_bool(b));
 }
 
@@ -405,8 +417,10 @@ value stub_dbus_connection_read_write_dispatch(value bus, value timeout)
 {
 	CAMLparam2(bus, timeout);
 	dbus_bool_t b;
+	caml_enter_blocking_section();
 	b = dbus_connection_read_write_dispatch(DBusConnection_val(bus),
 	                                        Int_val(timeout));
+	caml_leave_blocking_section();
 	CAMLreturn(Val_bool(b));
 }
 
@@ -416,10 +430,12 @@ value stub_dbus_connection_pop_message(value bus)
 	CAMLlocal2(msg_opt, msg);
 	DBusMessage *c_msg;
 
-	msg_opt = Val_int(0); /* None */
+	msg_opt = Val_none;
 	msg = Val_unit;
 
+	caml_enter_blocking_section();
 	c_msg = dbus_connection_pop_message(DBusConnection_val(bus));
+	caml_leave_blocking_section();
 	if (c_msg) {
 		voidstar_alloc(msg, c_msg, finalize_dbus_message);
 		caml_alloc_some(msg_opt, msg);
@@ -438,12 +454,34 @@ value stub_dbus_connection_get_fd(value bus)
 	CAMLreturn(Val_int(fd));
 }
 
+value stub_dbus_connection_dispatch(value bus)
+{
+	CAMLparam1(bus);
+	CAMLlocal1(ret);
+	DBusDispatchStatus status;
+
+	status = dbus_connection_dispatch(DBusConnection_val(bus));
+	caml_alloc_variant(ret, Val_int(find_index_equal(status, __dispatch_status_table)));
+	CAMLreturn(ret);
+}
+
+value stub_dbus_connection_get_dispatch_status(value bus)
+{
+	CAMLparam1(bus);
+	CAMLlocal1(ret);
+	DBusDispatchStatus status;
+
+	status = dbus_connection_get_dispatch_status(DBusConnection_val(bus));
+	caml_alloc_variant(ret, Val_int(find_index_equal(status, __dispatch_status_table)));
+	CAMLreturn(ret);
+}
+
 static dbus_bool_t watch_add_cb(DBusWatch *c_watch, void *data)
 {
 	CAMLparam0();
-	CAMLlocal1(watch);
+	CAMLlocal2(watch, add_cb);
 	value *fns = data;
-	value add_cb = Field(*fns, 0);
+	add_cb = Field(*fns, 0);
 	int ret;
 
 	voidstar_alloc(watch, c_watch, finalize_dbus_watch);
@@ -454,9 +492,9 @@ static dbus_bool_t watch_add_cb(DBusWatch *c_watch, void *data)
 static void watch_rm_cb(DBusWatch *c_watch, void *data)
 {
 	CAMLparam0();
-	CAMLlocal1(watch);
+	CAMLlocal2(watch, rm_cb);
 	value *fns = data;
-	value rm_cb = Field(*fns, 1);
+	rm_cb = Field(*fns, 1);
 
 	voidstar_alloc(watch, c_watch, finalize_dbus_watch);
 	caml_callback(rm_cb, watch);
@@ -466,9 +504,9 @@ static void watch_rm_cb(DBusWatch *c_watch, void *data)
 static void watch_toggle_cb(DBusWatch *c_watch, void *data)
 {
 	CAMLparam0();
-	CAMLlocal1(watch);
+	CAMLlocal2(watch, toggle_cb);
 	value *fns = data;
-	value toggle_cb = Field(*fns, 2);
+	toggle_cb = Field(*fns, 2);
 
 	if (toggle_cb != Val_none) {
 		voidstar_alloc(watch, c_watch, finalize_dbus_watch);
@@ -488,6 +526,7 @@ value stub_dbus_connection_set_watch_functions(value bus, value fns)
 {
 	CAMLparam2(bus, fns);
 	value *callbackfns;
+	int ret;
 
 	callbackfns = malloc(sizeof(value));
 	if (!callbackfns)
@@ -496,9 +535,11 @@ value stub_dbus_connection_set_watch_functions(value bus, value fns)
 	*callbackfns = fns;
 	caml_register_global_root(callbackfns);
 
-	dbus_connection_set_watch_functions(DBusConnection_val(bus), watch_add_cb,
-	                                    watch_rm_cb, watch_toggle_cb, (void *) fns,
-	                                    watch_free_cb);
+	ret = dbus_connection_set_watch_functions(DBusConnection_val(bus), watch_add_cb,
+	                                          watch_rm_cb, watch_toggle_cb, (void *) callbackfns,
+	                                          watch_free_cb);
+	if (!ret)
+		caml_raise_out_of_memory();
 	CAMLreturn(Val_unit);
 }
 

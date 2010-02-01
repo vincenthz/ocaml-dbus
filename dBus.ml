@@ -224,6 +224,8 @@ end
 
 (**************** CONNECTION *******************)
 module Connection = struct
+type dispatch_status = Data_remains | Complete | Need_memory
+
 external send : bus -> message -> int32
               = "stub_dbus_connection_send"
 external send_with_reply : bus -> message -> int -> pending_call
@@ -245,6 +247,14 @@ external read_write_dispatch : bus -> int -> bool
 
 external pop_message : bus -> message option
                      = "stub_dbus_connection_pop_message"
+
+external get_dispatch_status : bus -> dispatch_status
+	= "stub_dbus_connection_get_dispatch_status"
+(** [get_dispatch_status bus] gets the current state of the incoming message queue. *)
+external dispatch : bus -> dispatch_status
+	= "stub_dbus_connection_dispatch"
+(** [dispatch bus] Processes any incoming data. *)
+
 external get_fd : bus -> Unix.file_descr = "stub_dbus_connection_get_fd"
 
 external set_watch_functions : bus -> watch_fns -> unit

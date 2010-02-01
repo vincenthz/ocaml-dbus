@@ -55,6 +55,63 @@ let server bus =
 				printf "other call\n%!"
 	done
 
+let server2 bus =
+	let match_s = "type='signal',interface='test.signal.Type'" in
+	DBus.Bus.add_match bus match_s false;
+	DBus.Connection.flush bus;
+	DBus.Connection.add_filter bus (fun bus msg -> true);
+
+	let rset = ref [] in
+	let wset = ref [] in
+
+	let addfn watch =
+		let flags = DBus.Watch.get_flags watch in
+		printf "added watch\n";
+		let x = String.concat ", " (List.map (fun flag ->
+			match flag with
+			| DBus.Watch.Readable -> "readable"
+			| DBus.Watch.Writable -> "writable"
+			) flags) in
+		let fd = DBus.Watch.get_unix_fd watch in
+		List.iter (fun flag ->
+			match flag with
+			| DBus.Watch.Readable -> rset := fd :: !rset;
+			| DBus.Watch.Writable -> wset := fd :: !wset;
+		) flags;
+		printf "added watch (%s)\n" x;
+		true
+		in
+	let rmfn watch = printf "rmed watch\n" in
+	let togglefn watch = printf "toggled watch\n" in
+		
+	DBus.Connection.set_watch_functions bus (addfn, rmfn, Some togglefn);
+	DBus.Connection.flush bus;
+	let rset = !rset and wset = !wset in
+	while true
+	do
+		let r, w, _ = Unix.select rset [] [] (1.1) in
+		if r <> [] || w <> [] then (
+			if r <> [] then printf "something to read\n%!";
+
+			DBus.Connection.read_write bus 0;
+			let msg = DBus.Connection.pop_message bus in
+
+			match msg with
+			| None -> Unix.sleep 1; ()
+			| Some msg ->
+				let params = DBus.Message.get msg in
+				let show p =
+					match p with
+					| DBus.String s -> printf "S: %s\n%!" s;
+					| DBus.Int32 i -> printf "I: %ld\n%!" i;
+					| DBus.Bool b -> printf "B: %b\n%!" b;
+					| _ -> printf "other type\n";
+					in
+
+				List.iter show params
+		)
+	done
+
 let _ =
 	if (Array.length Sys.argv) < 2 then (
 		eprintf "usage: test [server|client]\n";
@@ -64,6 +121,6 @@ let _ =
 	let bus = DBus.Bus.get DBus.Bus.System in
 
 	match Sys.argv.(1) with
-	| "server" -> server bus
+	| "server" -> server2 bus
 	| "client" -> client bus
 	| _        -> eprintf "unknown command\n";
