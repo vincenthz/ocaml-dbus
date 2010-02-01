@@ -50,6 +50,7 @@ type ty =
 	| ObjectPath of string
 	| Array of ty_array
 	| Struct of ty list
+	| Variant of ty
 
 val string_of_ty : ty -> string
 

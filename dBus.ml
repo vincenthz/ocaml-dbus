@@ -56,6 +56,7 @@ type ty =
 	| ObjectPath of string
 	| Array of ty_array
 	| Struct of ty list
+	| Variant of ty
 
 let string_of_ty_array ty =
 	match ty with
@@ -89,6 +90,7 @@ let rec string_of_ty ty =
 	| Array Unknowns -> Printf.sprintf "Array[...]"
 	| Array ty     -> Printf.sprintf "Array[%s]" (String.concat ", " (string_of_ty_array ty))
 	| Struct tys   -> Printf.sprintf "Struct{%s}" (String.concat ", " (List.map string_of_ty tys))
+	| Variant ty   -> Printf.sprintf "Variant{%s}" (string_of_ty ty)
 
 (******************** BUS **********************)
 module Bus = struct
@@ -115,20 +117,43 @@ end
 module Message = struct
 type message_type = Invalid | Method_call | Method_return | Error | Signal
 
+let string_of_message_ty ty =
+	match ty with
+	| Invalid       -> "invalid"
+	| Method_call   -> "method_call"
+	| Method_return -> "method_return"
+	| Error         -> "error"
+	| Signal        -> "signal"
+
 external create : message_type -> message = "stub_dbus_message_create"
+(** [create message_type] create a new empty message with a specific type.
+   recommended not to use this call but use new_* calls instead that prefil
+   all the required field too. *)
+
 external new_method_call : string -> string -> string -> string -> message
                          = "stub_dbus_message_new_method_call"
+(** [new_method_call destination path interface method] create a new method message *)
+
 external new_method_return : message -> message =
                            "stub_dbus_message_new_method_return"
+(** [new_method_return message] create a new method return message from a method message *)
+
 external new_signal : string -> string -> string -> message
                     = "stub_dbus_message_new_signal"
+(** [new_signal path interface method] create a new signal message *)
+
 external new_error : message -> string -> string -> message
                     = "stub_dbus_message_new_error"
+(** [new_error original_message error_name error_message] create a new error message
+   from another message *)
 
 external append : message -> ty list -> unit = "stub_dbus_message_append"
-external get_rev : message -> ty list = "stub_dbus_message_get"
-let get message = List.rev (get_rev message)
+(** [append message parameters] appends dbus parameters to the message *)
 
+external get_rev : message -> ty list = "stub_dbus_message_get"
+
+let get message = List.rev (get_rev message)
+(** [get message] returns all parameters associated with the message *)
 
 external set_path : message -> string -> unit = "stub_dbus_message_set_path"
 external set_interface : message -> string -> unit = "stub_dbus_message_set_interface"
@@ -236,6 +261,7 @@ type flags = Readable | Writable
 external get_unix_fd : watch -> Unix.file_descr = "stub_dbus_watch_get_unix_fd"
 external get_enabled : watch -> bool = "stub_dbus_watch_get_enabled"
 external get_flags : watch -> flags list = "stub_dbus_watch_get_flags"
+external handle : watch -> flags list -> unit = "stub_dbus_watch_handle"
 
 end
 

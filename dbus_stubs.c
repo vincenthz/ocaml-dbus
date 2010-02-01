@@ -58,7 +58,7 @@ static int __type_table[] = {
 	DBUS_TYPE_INT64, DBUS_TYPE_UINT64,
 	DBUS_TYPE_DOUBLE, DBUS_TYPE_STRING,
 	DBUS_TYPE_OBJECT_PATH, DBUS_TYPE_ARRAY,
-	DBUS_TYPE_STRUCT,
+	DBUS_TYPE_STRUCT, DBUS_TYPE_VARIANT,
 	-1
 };
 
@@ -534,14 +534,14 @@ value stub_dbus_message_create(value message_type)
 	CAMLreturn(msg);
 }
 
-value stub_dbus_message_new_method_call(value bus_name, value path,
+value stub_dbus_message_new_method_call(value destination, value path,
                                         value interface, value method)
 {
-	CAMLparam4(bus_name, path, interface, method);
+	CAMLparam4(destination, path, interface, method);
 	CAMLlocal1(msg);
 	DBusMessage *c_msg;
 
-	c_msg = dbus_message_new_method_call(String_val(bus_name),
+	c_msg = dbus_message_new_method_call(String_val(destination),
 	                                     String_val(path),
 	                                     String_val(interface),
 	                                     String_val(method));
@@ -815,7 +815,7 @@ value stub_dbus_message_append(value message, value list)
 	CAMLreturn(Val_unit);
 }
 
-static value dbus_type_to_caml(DBusMessageIter *iter, int initial_has_next, int alloc_variant);
+static value dbus_ty_list_from_c(DBusMessageIter *iter, int initial_has_next, int alloc_variant);
 
 static value message_basic_type_to_caml(DBusMessageIter *iter, int c_type)
 {
@@ -885,7 +885,7 @@ static value dbus_array_to_caml(DBusMessageIter *iter, int initial_has_next)
 	type = find_index_equal(c_type, __type_array_table);
 	/* check if we know the type */
 	if (type != -1) {
-		v = dbus_type_to_caml(iter, 1, 0);
+		v = dbus_ty_list_from_c(iter, 1, 0);
 
 		r = caml_alloc_small(1, type);
 		Field(r, 0) = v;
@@ -901,11 +901,58 @@ static value dbus_struct_to_caml(DBusMessageIter *iter, int initial_has_next)
 	CAMLparam0();
 	value v;
 
-	v = dbus_type_to_caml(iter, 1, 1);
+	v = dbus_ty_list_from_c(iter, 1, 1);
 	CAMLreturn(v);
 }
 
-static value dbus_type_to_caml(DBusMessageIter *iter, int initial_has_next, int alloc_variant)
+/** dbus_ty_one_from_c returns one value beeing the raw representation of
+ *  the type. meaning it's not tagged for use as an ocaml variant type.
+ */
+static value dbus_ty_one_from_c(DBusMessageIter *iter, int *subtype)
+{
+	CAMLparam0();
+	CAMLlocal1(v);
+	int c_type, type;
+
+	c_type = dbus_message_iter_get_arg_type(iter);
+	type = find_index_equal(c_type, __type_table);
+
+	if (IS_BASIC(c_type)) {
+		v = message_basic_type_to_caml(iter, c_type);
+	} else if (c_type == DBUS_TYPE_ARRAY) {
+		DBusMessageIter sub;
+		dbus_message_iter_recurse(iter, &sub);
+
+		v = dbus_array_to_caml(&sub, 1);
+	} else if (c_type == DBUS_TYPE_STRUCT) {
+		DBusMessageIter sub;
+		dbus_message_iter_recurse(iter, &sub);
+
+		v = dbus_struct_to_caml(&sub, 1);
+	} else if (c_type == DBUS_TYPE_VARIANT) {
+		DBusMessageIter sub;
+		int subtype;
+		value r;
+
+		dbus_message_iter_recurse(iter, &sub);
+		v = dbus_ty_one_from_c(&sub, &subtype);
+		r = caml_alloc_small(1, subtype);
+		Field(r, 0) = v;
+		v = r;
+	} else {
+		v = Val_int(0);
+	}
+
+	if (subtype)
+		*subtype = type;
+	CAMLreturn(v);
+}
+
+/** dbus_ty_list_from_c returns a caml list of value.
+ * if alloc_variant is true, then we allocated the ocaml variant-type tag. List of Dbus.ty
+ * otherwise, we allocated a raw list of values. List of string, List of int, etc
+ */
+static value dbus_ty_list_from_c(DBusMessageIter *iter, int initial_has_next, int alloc_variant)
 {
 	CAMLparam0();
 	CAMLlocal4(tmp, list, v, r);
@@ -918,42 +965,13 @@ static value dbus_type_to_caml(DBusMessageIter *iter, int initial_has_next, int 
 
 	has_next = initial_has_next;
 	while (has_next) {
-		int c_type, type;
+		int subtype;
 
-		c_type = dbus_message_iter_get_arg_type(iter);
-		type = find_index_equal(c_type, __type_table);
-		if (IS_BASIC(c_type)) {
-			v = message_basic_type_to_caml(iter, c_type);
-			if (alloc_variant) {
-				r = caml_alloc_small(1, type);
-				Field(r, 0) = v;
-			}
-		} else if (c_type == DBUS_TYPE_ARRAY) {
-			DBusMessageIter sub;
-			dbus_message_iter_recurse(iter, &sub);
-
-			v = dbus_array_to_caml(&sub, 1);
-			if (alloc_variant) {
-				r = caml_alloc_small(1, type);
-				Field(r, 0) = v;
-			}
-		} else if (c_type == DBUS_TYPE_STRUCT) {
-			DBusMessageIter sub;
-			dbus_message_iter_recurse(iter, &sub);
-
-			v = dbus_struct_to_caml(&sub, 1);
-			if (alloc_variant) {
-				r = caml_alloc_small(1, type);
-				Field(r, 0) = v;
-			}
-		} else {
-			if (alloc_variant)
-				r = Val_int(0);
-			else
-				v = Val_int(0);
-			break;
+		v = dbus_ty_one_from_c(iter, &subtype);
+		if (alloc_variant) {
+			r = caml_alloc_small(1, subtype);
+			Field(r, 0) = v;
 		}
-
 		tmp = caml_alloc_small(2, Tag_cons);
 		Field(tmp, 0) = (alloc_variant ? r : v);
 		Field(tmp, 1) = list;
@@ -974,7 +992,7 @@ value stub_dbus_message_get(value message)
 
 	c_msg = DBusMessage_val(message);
 	has_next = dbus_message_iter_init(c_msg, &args);
-	v = dbus_type_to_caml(&args, has_next, 1);
+	v = dbus_ty_list_from_c(&args, has_next, 1);
 
 	CAMLreturn(v);
 }
@@ -1088,4 +1106,21 @@ value stub_dbus_watch_get_flags(value watch)
 	}
 
 	CAMLreturn(flags);
+}
+
+value stub_dbus_watch_handle(value watch, value flags)
+{
+	CAMLparam2(watch, flags);
+	unsigned int c_flags;
+
+	for (c_flags = 0; flags != Val_emptylist; flags = Field(flags, 1)) {
+		switch (Field(flags, 0)) {
+		case 0: c_flags |= DBUS_WATCH_READABLE; break;
+		case 1: c_flags |= DBUS_WATCH_WRITABLE; break;
+		default: /* ouphfm */ break;
+		}
+	}
+	dbus_watch_handle(DBusWatch_val(watch), c_flags);
+
+	CAMLreturn(Val_unit);
 }
