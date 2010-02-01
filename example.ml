@@ -94,6 +94,16 @@ let test () =
 	] in
 	DBus.Message.append msg params;
 	print_dbus_ty_list (DBus.Message.get msg);
+
+	let msg = DBus.Message.new_method_call notif_name notif_path notif_interface "X" in
+	let params = [
+		DBus.Array (DBus.Strings []);
+		DBus.Array (DBus.Dicts ((DBus.SigString, DBus.SigString), []));
+		DBus.Array (DBus.Variants []);
+		DBus.Array (DBus.Structs ([ DBus.SigString ], []));
+	] in
+	DBus.Message.append msg params;
+	print_dbus_ty_list (DBus.Message.get msg);
 	()
 
 (*****************************************************************************)

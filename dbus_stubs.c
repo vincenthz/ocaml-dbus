@@ -1303,7 +1303,7 @@ static value message_get_array_struct(DBusMessageIter *iter)
 
 	DEBUG_GET("array_struct\n");
 	list = tmp = Val_emptylist;
-	has_next = 1;
+	has_next = dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_INVALID;
 	while (has_next) {
 		DBusMessageIter sub;
 
@@ -1324,7 +1324,7 @@ static value message_get_array_array(DBusMessageIter *iter)
 
 	DEBUG_GET("array_array\n");
 	list = tmp = Val_emptylist;
-	has_next = 1;
+	has_next = dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_INVALID;
 	while (has_next) {
 		DBusMessageIter sub;
 		int element_ty;
@@ -1347,7 +1347,7 @@ static value message_get_array_dict(DBusMessageIter *iter)
 
 	DEBUG_GET("array_dict\n");
 	list = tmp = Val_emptylist;
-	has_next = 1; /* FIXME */
+	has_next = dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_INVALID;
 	while (has_next) {
 		DBusMessageIter sub;
 		int subtype;
@@ -1388,7 +1388,7 @@ static value message_get_array(DBusMessageIter *iter, int array_c_type, int init
 	type = find_index_equal(array_c_type, __type_array_table);
 	if (IS_BASIC(array_c_type)) {
 		/* basic are all in the form : BASIC of list */
-		v = message_get_list(iter, 1, 0);
+		v = message_get_list(iter, dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_INVALID, 0);
 		caml_alloc_variant_param(r, type, v);
 	} else if (array_c_type == DBUS_TYPE_DICT_ENTRY) {
 		#if 0
@@ -1417,7 +1417,7 @@ static value message_get_array(DBusMessageIter *iter, int array_c_type, int init
 		Field(v, 1) = Val_int(0); /* FIXME */
 		Store_field(r, 0, v);
 	} else if (array_c_type == DBUS_TYPE_VARIANT) {
-		v = message_get_list(iter, 1, 1);
+		v = message_get_list(iter, dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_INVALID, 1);
 		caml_alloc_variant_param(r, type, v);
 	} else if (array_c_type == DBUS_TYPE_STRUCT) {
 		v = message_get_array_struct(iter);
