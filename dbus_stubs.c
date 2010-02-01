@@ -56,6 +56,7 @@ static int __type_table[] = {
 	DBUS_TYPE_INT64, DBUS_TYPE_UINT64,
 	DBUS_TYPE_DOUBLE, DBUS_TYPE_STRING,
 	DBUS_TYPE_OBJECT_PATH, DBUS_TYPE_ARRAY,
+	DBUS_TYPE_STRUCT,
 	-1
 };
 
@@ -73,6 +74,7 @@ static int find_index_equal(int searched_value, int *table)
 #define DBusMessage_val(v)      ((DBusMessage *) Field(v, 1))
 #define DBusError_val(v)        ((DBusError *) Field(v, 1))
 #define DBusPendingCall_val(v)	((DBusPendingCall *) Field(v, 1))
+#define DBusWatch_val(v)        ((DBusWatch *) Field(v, 1))
 
 #define voidstar_alloc(o_con, c_con, final_fct)				\
 	o_con = caml_alloc_final(SIZEOF_FINALPTR, final_fct,		\
@@ -778,6 +780,15 @@ static value dbus_array_to_caml(DBusMessageIter *iter, int initial_has_next)
 	CAMLreturn(r);
 }
 
+static value dbus_struct_to_caml(DBusMessageIter *iter, int initial_has_next)
+{
+	CAMLparam0();
+	value v;
+
+	v = dbus_type_to_caml(iter, 1, 1);
+	CAMLreturn(v);
+}
+
 static value dbus_type_to_caml(DBusMessageIter *iter, int initial_has_next, int alloc_variant)
 {
 	CAMLparam0();
@@ -806,6 +817,15 @@ static value dbus_type_to_caml(DBusMessageIter *iter, int initial_has_next, int 
 			dbus_message_iter_recurse(iter, &sub);
 
 			v = dbus_array_to_caml(&sub, 1);
+			if (alloc_variant) {
+				r = caml_alloc_small(1, type);
+				Field(r, 0) = v;
+			}
+		} else if (c_type == DBUS_TYPE_STRUCT) {
+			DBusMessageIter sub;
+			dbus_message_iter_recurse(iter, &sub);
+
+			v = dbus_struct_to_caml(&sub, 1);
 			if (alloc_variant) {
 				r = caml_alloc_small(1, type);
 				Field(r, 0) = v;
@@ -913,4 +933,13 @@ value stub_dbus_pending_call_steal_reply(value pending)
 	voidstar_alloc(message, c_message, finalize_dbus_message);
 
 	CAMLreturn(message);
+}
+
+value stub_dbus_watch_get_unix_fd(value watch)
+{
+	CAMLparam1(watch);
+	int c_fd;
+
+	c_fd = dbus_watch_get_unix_fd(DBusWatch_val(watch));
+	CAMLreturn(Val_int(c_fd));
 }

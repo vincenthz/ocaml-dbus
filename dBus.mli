@@ -49,6 +49,7 @@ type ty =
 	| String of string
 	| ObjectPath of string
 	| Array of ty_array
+	| Struct of ty list
 
 val string_of_ty : ty -> string
 

@@ -20,6 +20,7 @@ type error
 type bus
 type message
 type pending_call
+type watch
 
 type ty_array =
 	| Unknowns
@@ -49,6 +50,7 @@ type ty =
 	| String of string
 	| ObjectPath of string
 	| Array of ty_array
+	| Struct of ty list
 
 let string_of_ty_array ty =
 	match ty with
@@ -65,7 +67,7 @@ let string_of_ty_array ty =
 	| Strings ss -> List.map (fun x -> Printf.sprintf "%S" x) ss
 	| ObjectPaths ss -> List.map (fun x -> Printf.sprintf "%S" x) ss
 
-let string_of_ty ty =
+let rec string_of_ty ty =
 	match ty with
 	| Unknown      -> "Unknown"
 	| Byte c       -> Printf.sprintf "Byte(%C)" c
@@ -81,6 +83,7 @@ let string_of_ty ty =
 	| ObjectPath s -> Printf.sprintf "ObjectPath(%S)" s
 	| Array Unknowns -> Printf.sprintf "Array[...]"
 	| Array ty     -> Printf.sprintf "Array[%s]" (String.concat ", " (string_of_ty_array ty))
+	| Struct tys   -> Printf.sprintf "Struct{%s}" (String.concat ", " (List.map string_of_ty tys))
 
 (******************** BUS **********************)
 module Bus = struct
@@ -196,6 +199,13 @@ external get_completed : pending_call -> bool
                        = "stub_dbus_pending_call_get_completed"
 external steal_reply : pending_call -> message
                      = "stub_dbus_pending_call_steal_reply"
+end
+
+module Watch = struct
+
+external get_unix_fd : watch -> Unix.file_descr = "stub_dbus_watch_get_unix_fd"
+
+
 end
 
 let _ = Callback.register_exception "dbus.error" (Error ("register_callback", "register_callback"))

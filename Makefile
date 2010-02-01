@@ -1,14 +1,15 @@
 DBUS_CFLAGS = -ccopt "$(shell pkg-config --cflags dbus-1)"
-OCAMLC = ocamlc
-OCAMLOPT = ocamlopt
+OCAMLC ?= ocamlc
+OCAMLOPT ?= ocamlopt
+OCAMLMKLIB ?= ocamlmklib
 
 DBUS_LDFLAGS = -cclib "" $(shell pkg-config --libs dbus-1)
 
 OCAMLOPTFLAGS =
 OCAML_PKG_NAME = dbus
 
-OCAMLABI := $(shell ocamlc -version)
-OCAMLLIBDIR := $(shell ocamlc -where)
+OCAMLABI := $(shell $(OCAMLC) -version)
+OCAMLLIBDIR := $(shell $(OCAMLC) -where)
 OCAMLDESTDIR ?= $(OCAMLLIBDIR)
 
 OCAML_TEST_INC = -I `ocamlfind query oUnit`
@@ -41,7 +42,7 @@ dBus.cma: libdbus_stubs.a dBus.cmi dBus.cmo
 dbus_stubs.a: libdbus_stubs.a
 
 libdbus_stubs.a: dbus_stubs.o
-	ocamlmklib -o dbus_stubs $(DBUS_LDFLAGS) $+
+	$(OCAMLMKLIB) -o dbus_stubs $(DBUS_LDFLAGS) $+
 
 %.cmo: %.ml
 	$(OCAMLC) -c -o $@ $<
