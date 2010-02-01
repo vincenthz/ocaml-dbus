@@ -1,0 +1,3 @@
+version="0.01"
+archive(byte)="dBus.cma"
+archive(native)="dBus.cmxa"
