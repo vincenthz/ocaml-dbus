@@ -14,6 +14,7 @@
  * Dbus binding
  */
 
+#include <stdint.h>
 #include <string.h>
 #include <dbus/dbus.h>
 
@@ -1086,7 +1087,7 @@ static void message_append_basic(DBusMessageIter *iter, int c_type, value v)
 	DEBUG_APPEND("basic: %c (%d)\n", c_type, c_type);
 	switch (c_type) {
 	case DBUS_TYPE_BYTE: {
-		char x;
+		uint8_t x;
 		x = Int_val(v);
 		dbus_message_iter_append_basic(iter, c_type, &x);
 		break;
@@ -1436,7 +1437,7 @@ static value message_get_basic(DBusMessageIter *iter, int c_type)
 	DEBUG_GET("basic: %c (%d)\n", c_type, c_type);
 	switch (c_type) {
 	case DBUS_TYPE_BYTE: {
-		char c;
+		uint8_t c;
 		dbus_message_iter_get_basic(iter, &c);
 		v = Val_int(c);
 		break;
