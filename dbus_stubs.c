@@ -54,7 +54,7 @@
 
 #define Val_none 		(Val_int(0))
 #define caml_alloc_variant(val, tag)	\
-	do { val = Val_int(tag); } while (0)
+	do { val = tag; } while (0)
 #define caml_alloc_variant_param(val, tag, p) \
 	do { val = caml_alloc_small(1, tag); Field(val, 0) = (p); } while (0)
 #define caml_alloc_variant_param2(val, tag, p1, p2) \
@@ -1625,7 +1625,7 @@ static value message_get_array(DBusMessageIter *iter, int array_c_type, int init
 		caml_alloc_variant_param2(r, type, Val_int(0), v);
 	} else {
 		/*printf("array_c_type: unknown %c (%d)\n", array_c_type, array_c_type); */
-		caml_alloc_variant(r, 0); /* r = Dbus.Ty(Unknown) */
+		caml_alloc_variant(r, Val_int(0)); /* r = Dbus.Ty(Unknown) */
 	}
 
 	CAMLreturn(r);
@@ -1677,7 +1677,7 @@ static value message_get_one(DBusMessageIter *iter, int *subtype)
 		caml_alloc_variant_param(r, subtype, v);
 		v = r;
 	} else {
-		caml_alloc_variant(v, 0);
+		caml_alloc_variant(v, Val_int(0));
 	}
 
 	if (subtype)
