@@ -1341,8 +1341,6 @@ static value message_append_array(DBusMessageIter *iter, value array)
 		dbus_message_iter_close_container(iter, &sub);
 	} else if (array_c_type == DBUS_TYPE_ARRAY) {
 		/* ocaml representation: Arrays of ty_sig * ty_array list */
-		int sigty;
-
 		mk_signature_arrays(Field(array, 0), &sig);
 
 		CHECK_SIG_ERROR(&sig);
