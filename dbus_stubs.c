@@ -486,9 +486,11 @@ value stub_dbus_connection_send_with_reply(value bus, value message,
 	DBusPendingCall *c_pending;
 	int ret;
 
+	caml_enter_blocking_section();
 	ret = dbus_connection_send_with_reply(DBusConnection_val(bus),
 	                                      DBusMessage_val(message),
 	                                      &c_pending, Int_val(timeout));
+	caml_leave_blocking_section();
 	if (!ret) {
 		free(c_pending);
 		raise_dbus_internal_error("dbus_connection_send_with_reply");
@@ -507,11 +509,13 @@ value stub_dbus_connection_send_with_reply_and_block(value bus, value message,
 	DBusError error;
 
 	dbus_error_init(&error);
+	caml_enter_blocking_section();
 	c_rmsg = dbus_connection_send_with_reply_and_block(
 	                                               DBusConnection_val(bus),
 	                                               DBusMessage_val(message),
 	                                               Int_val (timeout),
 	                                               &error);
+	caml_leave_blocking_section();
 	if (!c_rmsg)
 		raise_dbus_error(&error);
 
@@ -566,7 +570,9 @@ value stub_dbus_connection_add_filter(value bus, value callback)
 value stub_dbus_connection_flush(value bus)
 {
 	CAMLparam1(bus);
+	caml_enter_blocking_section();
 	dbus_connection_flush(DBusConnection_val(bus));
+	caml_leave_blocking_section();
 	CAMLreturn(Val_unit);
 }
 
@@ -627,7 +633,10 @@ value stub_dbus_connection_dispatch(value bus)
 	CAMLlocal1(ret);
 	DBusDispatchStatus status;
 
+	caml_enter_blocking_section();
 	status = dbus_connection_dispatch(DBusConnection_val(bus));
+	caml_enter_blocking_section();
+
 	caml_alloc_variant(ret, Val_int(find_index_equal(status, __dispatch_status_table)));
 	CAMLreturn(ret);
 }
@@ -638,7 +647,10 @@ value stub_dbus_connection_get_dispatch_status(value bus)
 	CAMLlocal1(ret);
 	DBusDispatchStatus status;
 
+	caml_enter_blocking_section();
 	status = dbus_connection_get_dispatch_status(DBusConnection_val(bus));
+	caml_leave_blocking_section();
+
 	caml_alloc_variant(ret, Val_int(find_index_equal(status, __dispatch_status_table)));
 	CAMLreturn(ret);
 }
@@ -1785,7 +1797,9 @@ value stub_dbus_message_marshal(value message)
 value stub_dbus_pending_call_block(value pending)
 {
 	CAMLparam1(pending);
+	caml_enter_blocking_section();
 	dbus_pending_call_block(DBusPendingCall_val(pending));
+	caml_leave_blocking_section();
 	CAMLreturn(Val_unit);
 }
 
