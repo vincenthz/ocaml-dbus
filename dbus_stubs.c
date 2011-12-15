@@ -986,6 +986,9 @@ value stub_dbus_message_get_error_name(value message)
 		error_name = Val_none;
 	else {
 		int index = find_index_string(errname, __error_table);
+		/* we didn't find the exact error,
+		   just return a generic one */
+		if (index == -1) index = 0;
 		caml_alloc_some(error_name, Val_int(index));
 	}
 	CAMLreturn(error_name);
